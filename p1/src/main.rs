@@ -4,10 +4,12 @@ mod ej3;
 mod ej4;
 mod ej5;
 mod ej6;
+mod ej7;
+
 use std::io;
 
 fn main() {
-    println!("Selecciona un ejercicio (1-6): ");
+    println!("Selecciona un ejercicio (1-7): ");
 
     let mut input = String::new();
     io::stdin()
@@ -30,6 +32,7 @@ fn main() {
         4 => ej4::ej4(),
         5 => ej5::ej5(),
         6 => ej6::ej6(),
+        7 => ej7::ej7(),
         _ => println!("Opción no válida"),
     }
 }
