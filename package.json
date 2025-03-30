@@ -1,0 +1,20 @@
+{
+  "name": "rust-practica",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "husky": {
+    "hooks": {
+      "commit-msg": "sh scripts/commit-msg.sh $HUSKY_GIT_PARAMS"
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}
