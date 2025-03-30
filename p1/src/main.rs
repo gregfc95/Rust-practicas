@@ -3,7 +3,9 @@ mod ej2;
 mod ej3;
 mod ej4;
 mod ej5;
+mod ej6;
 mod ej7;
+
 use std::io;
 
 fn main() {
@@ -29,6 +31,7 @@ fn main() {
         3 => ej3::ej3(),
         4 => ej4::ej4(),
         5 => ej5::ej5(),
+        6 => ej6::ej6(),
         7 => ej7::ej7(),
         _ => println!("Opción no válida"),
     }
