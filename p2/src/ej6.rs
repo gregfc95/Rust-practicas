@@ -15,6 +15,8 @@ pub fn ej6() {
     // & Necesites leer datos sin modificarlos
     // & Quieras mantener el ownership del valor original
     let longitudes = longitud_de_cadenas(&palabras);
+
+    println!("Longitudes: {:?}", longitudes);
 }
 
 fn longitud_de_cadenas(arr: &Vec<String>) -> Vec<usize> {
