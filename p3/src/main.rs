@@ -1,8 +1,6 @@
 pub mod tp3;
 use tp3::ej1::Persona;
 use tp3::ej2::Rectangulo;
-use tp3::ej5::Producto;
-
 fn main() {
     //ej1
     let persona = Persona::new("Carla".to_string(), 30, None);
