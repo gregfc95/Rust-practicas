@@ -21,7 +21,7 @@ descuento del 10%.
 ■ si la marca es BMW le aplica un recargo del 15%-
 ■ si el año es menor a 2000 le aplica un descuento del 5%.
 */
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Color {
     Rojo,
     Verde,
@@ -31,6 +31,7 @@ pub enum Color {
     Negro,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct Auto {
     marca: String,
     modelo: String,
@@ -132,6 +133,93 @@ mod tests {
     use std::vec;
 
     use super::*;
+
+    #[test]
+    fn crear_concesionario() {
+        let concesionario =
+            Concesionario::new("TuAutoExpress".to_string(), "calle".to_string(), 10, vec![]);
+        assert_eq!(concesionario.nombre, "TuAutoExpress");
+        assert_eq!(concesionario.direccion, "calle");
+        assert_eq!(concesionario.capacidad_maxima, 10);
+    }
+
+    #[test]
+    fn test_agregar_auto() {
+        let mut concesionario =
+            Concesionario::new("TuAutoExpress".to_string(), "calle".to_string(), 1, vec![]);
+        assert_eq!(concesionario.nombre, "TuAutoExpress");
+        assert_eq!(concesionario.direccion, "calle");
+        assert_eq!(concesionario.capacidad_maxima, 1);
+
+        let a1 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            1995,
+            10000.0,
+            Color::Blanco,
+        );
+        let a2 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            2001,
+            10000.0,
+            Color::Blanco,
+        );
+        assert_eq!(concesionario.agregar_auto(a1), true);
+        assert_eq!(concesionario.agregar_auto(a2), false);
+    }
+
+    #[test]
+    fn test_eliminar_auto() {
+        let a1 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            1995,
+            10000.0,
+            Color::Blanco,
+        );
+        let a2 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            2001,
+            10000.0,
+            Color::Blanco,
+        );
+
+        let v1: Vec<Auto> = vec![a1.clone()];
+        let mut concesionario =
+            Concesionario::new("TuAutoExpress".to_string(), "calle".to_string(), 1, v1);
+
+        assert!(concesionario.eliminar_auto(&a1).is_some());
+        assert!(concesionario.eliminar_auto(&a2).is_none());
+        assert!(concesionario.autos.is_empty());
+    }
+
+    #[test]
+    fn test_buscar_auto() {
+        let a1 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            1995,
+            10000.0,
+            Color::Blanco,
+        );
+        let a2 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            2001,
+            10000.0,
+            Color::Blanco,
+        );
+
+        let v1: Vec<Auto> = vec![a1.clone()];
+        let concesionario =
+            Concesionario::new("TuAutoExpress".to_string(), "calle".to_string(), 1, v1);
+
+        assert!(concesionario.buscar_auto(&a1).is_some());
+        assert!(concesionario.buscar_auto(&a2).is_none());
+    }
+
     #[test]
     fn crear_auto() {
         let auto = Auto::new(
@@ -147,16 +235,6 @@ mod tests {
         assert_eq!(auto.precio_bruto, 10000.0);
         assert_eq!(auto.modelo, "x5");
     }
-
-    #[test]
-    fn crear_concesionario() {
-        let concesionario =
-            Concesionario::new("TuAutoExpress".to_string(), "calle".to_string(), 10, vec![]);
-        assert_eq!(concesionario.nombre, "TuAutoExpress");
-        assert_eq!(concesionario.direccion, "calle");
-        assert_eq!(concesionario.capacidad_maxima, 10);
-    }
-
     #[test]
     fn test_calcular_precio_recargo_color() {
         let a1 = Auto::new(
