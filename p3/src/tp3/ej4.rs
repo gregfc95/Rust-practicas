@@ -13,7 +13,7 @@ pub struct Triangulo {
     lado2: f32,
     lado3: f32,
 }
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Tipo {
     Equilatero,
     Isosceles,
@@ -72,12 +72,18 @@ mod tests {
 
     #[test]
     fn test_determinar_tipo() {
+        let e = Triangulo::new(1.0, 1.0, 1.0);
+        assert!(matches!(e.determinar_tipo(), Tipo::Equilatero));
+        let es = Triangulo::new(1.0, 2.0, 3.0);
+        assert!(matches!(es.determinar_tipo(), Tipo::Escaleno));
+        let i = Triangulo::new(1.0, 1.0, 2.0);
+        assert!(matches!(i.determinar_tipo(), Tipo::Isosceles));
+        //Si no se puede usar matches.
         let t = Triangulo::new(1.0, 1.0, 1.0);
-        assert_eq!(t.determinar_tipo(), Tipo::Equilatero);
-        let t = Triangulo::new(1.0, 2.0, 3.0);
-        assert_eq!(t.determinar_tipo(), Tipo::Escaleno);
-        let t = Triangulo::new(1.0, 1.0, 2.0);
-        assert_eq!(t.determinar_tipo(), Tipo::Isosceles);
+        match t.determinar_tipo() {
+            Tipo::Equilatero => (), // Test pasa
+            _ => panic!("Debería ser equilátero"),
+        }
     }
 
     #[test]

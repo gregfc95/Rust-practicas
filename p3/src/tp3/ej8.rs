@@ -12,7 +12,7 @@ ella:
 ➔ modificar título de la playlist.
 ➔ eliminar todas las canciones
 */
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum Genero {
     Rock,
     Pop,
@@ -20,7 +20,7 @@ pub enum Genero {
     Jazz,
     Otros,
 }
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct Cancion {
     titulo: String,
     artista: String,
@@ -31,13 +31,22 @@ pub struct Playlist {
     nombre: String,
     canciones: Vec<Cancion>,
 }
+impl Genero {
+    pub fn igual(&self, otro: &Genero) -> bool {
+        match (self, otro) {
+            (Genero::Rock, Genero::Rock)
+            | (Genero::Pop, Genero::Pop)
+            | (Genero::Rap, Genero::Rap)
+            | (Genero::Jazz, Genero::Jazz)
+            | (Genero::Otros, Genero::Otros) => true,
+            _ => false,
+        }
+    }
+}
 
 impl Playlist {
     pub fn new(nombre: String, canciones: Vec<Cancion>) -> Self {
-        Playlist {
-            nombre,
-            canciones: Vec::new(),
-        }
+        Playlist { nombre, canciones }
     }
 
     pub fn set_nombre(&mut self, nombre: String) {
@@ -51,7 +60,9 @@ impl Playlist {
 
     pub fn eliminar_cancion(&mut self, cancion: &Cancion) -> Option<Cancion> {
         let index = self.canciones.iter().position(|c| {
-            c.titulo == cancion.titulo && c.artista == cancion.artista && c.genero == cancion.genero
+            c.titulo.as_str() == cancion.titulo.as_str()
+                && c.artista.as_str() == cancion.artista.as_str()
+                && c.genero.igual(&cancion.genero)
         })?;
         Some(self.canciones.remove(index))
     }
@@ -62,7 +73,7 @@ impl Playlist {
     pub fn obtener_canciones_por_genero(&self, genero_buscado: Genero) -> Vec<&Cancion> {
         self.canciones
             .iter()
-            .filter(|c| c.genero == genero_buscado)
+            .filter(|c| c.genero.igual(&genero_buscado))
             .collect()
     }
 
@@ -82,7 +93,9 @@ impl Playlist {
             return false;
         }
         let index = match self.canciones.iter().position(|c| {
-            c.titulo == cancion.titulo && c.artista == cancion.artista && c.genero == cancion.genero
+            c.titulo == cancion.titulo
+                && c.artista == cancion.artista
+                && c.genero.igual(&cancion.genero)
         }) {
             Some(i) => i,
             None => return false,
@@ -124,7 +137,7 @@ mod tests {
         let cancion = Cancion::new("Cancion".to_string(), "Artista".to_string(), Genero::Rock);
         assert_eq!(cancion.titulo, "Cancion");
         assert_eq!(cancion.artista, "Artista");
-        assert_eq!(cancion.genero, Genero::Rock);
+        assert!(cancion.genero.igual(&Genero::Rock));
     }
 
     #[test]
