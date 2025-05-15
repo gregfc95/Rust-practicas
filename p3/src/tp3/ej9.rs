@@ -8,6 +8,15 @@ desea tener un registro de las atenciones realizadas guardando los datos de la m
 diagnóstico final, tratamiento y fecha de la próxima visita si es que se requiere.
 Dado todo lo mencionado anteriormente implemente los métodos para realizar las
 siguientes acciones:
+➔ crear una veterinaria.
+➔ agregar una nueva mascota a la cola de atención de la veterinaria.
+➔ agregar una nueva mascota a la cola de atención pero que sea la siguiente
+en atender porque tiene la máxima prioridad.
+➔ atender la próxima mascota de la cola.
+➔ eliminar una mascota específica de la cola de atención dado que se retira.
+➔ registrar una atención.
+➔ buscar una atención dado el nombre de la mascota, el nombre del dueño y el
+teléfono.
 ➔ modificar el diagnóstico de una determinada atención.
 ➔ modificar la fecha de la próxima visita de una determinada atención.
 ➔ eliminar una determinada atención.
@@ -34,12 +43,13 @@ impl Animal {
         }
     }
 }
-
+#[derive(Debug, Clone)]
 struct Dueño {
     nombre: String,
     direccion: String,
     telefono: String,
 }
+#[derive(Debug, Clone)]
 struct Mascota {
     nombre: String,
     edad: u32,
@@ -155,5 +165,154 @@ impl Atencion {
             tratamiento,
             fecha_proxima_visita,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn crear_mascota() -> Mascota {
+        Mascota {
+            nombre: "Firulais".to_string(),
+            edad: 5,
+            tipo: Animal::Perro,
+            dueño: Dueño {
+                nombre: "Carlos".to_string(),
+                direccion: "Calle Falsa 123".to_string(),
+                telefono: "123456789".to_string(),
+            },
+        }
+    }
+
+    fn crear_fecha() -> Fecha {
+        Fecha::new(14, 5, 2025).unwrap()
+    }
+
+    #[test]
+    fn test_agregar() {
+        let mut vet = Veterinaria::new(
+            "Mi Vet".to_string(),
+            "Av. Siempre Viva".to_string(),
+            1,
+            VecDeque::new(),
+            vec![],
+        );
+        let mascota = crear_mascota();
+
+        vet.agregar_mascota(mascota.clone());
+        assert_eq!(vet.cola.len(), 1);
+
+        vet.eliminar_mascota_especifica(mascota);
+        assert_eq!(vet.cola.len(), 0);
+    }
+    #[test]
+    fn test_atender_mascota() {
+        let mut vet = Veterinaria::new(
+            "Vet".to_string(),
+            "Calle".to_string(),
+            1,
+            VecDeque::new(),
+            vec![],
+        );
+        let mascota = crear_mascota();
+
+        vet.agregar_mascota(mascota.clone());
+        let atendida = vet.atender_mascota();
+        assert!(atendida.is_some());
+        assert!(vet.cola.is_empty());
+    }
+
+    #[test]
+    fn test_registrar_y_buscar_atencion() {
+        let mut vet = Veterinaria::new(
+            "Vet".to_string(),
+            "Calle".to_string(),
+            1,
+            VecDeque::new(),
+            vec![],
+        );
+        let mascota = crear_mascota();
+        let fecha = Some(crear_fecha());
+
+        let atencion = Atencion::new(
+            mascota.clone(),
+            "Resfriado".to_string(),
+            "Reposo".to_string(),
+            fecha.clone(),
+        );
+
+        vet.registrar_atencion(atencion);
+
+        let resultado = vet.buscar_atencion(
+            mascota.nombre.clone(),
+            mascota.dueño.nombre.clone(),
+            mascota.dueño.telefono.clone(),
+        );
+
+        assert!(resultado.is_some());
+        assert_eq!(resultado.unwrap().diagnóstico, "Resfriado");
+    }
+
+    #[test]
+    fn test_modificar_diagnostico() {
+        let mut vet = Veterinaria::new(
+            "Vet".to_string(),
+            "Calle".to_string(),
+            1,
+            VecDeque::new(),
+            vec![],
+        );
+        let mascota = crear_mascota();
+        let fecha = Some(crear_fecha());
+
+        vet.registrar_atencion(Atencion::new(
+            mascota.clone(),
+            "Fiebre".to_string(),
+            "Reposo".to_string(),
+            fecha,
+        ));
+
+        vet.modificar_diagnostico(mascota.clone(), "Gripe canina".to_string());
+
+        let atencion = vet.buscar_atencion(
+            mascota.nombre.clone(),
+            mascota.dueño.nombre.clone(),
+            mascota.dueño.telefono.clone(),
+        );
+
+        assert_eq!(atencion.unwrap().diagnóstico, "Gripe canina");
+    }
+
+    #[test]
+    fn test_modificar_fecha_proxima_visita() {
+        let mut vet = Veterinaria::new(
+            "Vet".to_string(),
+            "Calle".to_string(),
+            1,
+            VecDeque::new(),
+            vec![],
+        );
+        let mascota = crear_mascota();
+
+        vet.registrar_atencion(Atencion::new(
+            mascota.clone(),
+            "Chequeo".to_string(),
+            "Ninguno".to_string(),
+            None,
+        ));
+
+        let nueva_fecha = Some(Fecha::new(20, 6, 2025).unwrap());
+        vet.modificar_fecha_proxima_visita(mascota.clone(), nueva_fecha.clone());
+
+        let atencion = vet.buscar_atencion(
+            mascota.nombre.clone(),
+            mascota.dueño.nombre.clone(),
+            mascota.dueño.telefono.clone(),
+        );
+
+        let fecha_obtenida = atencion.unwrap().fecha_proxima_visita.as_ref().unwrap();
+        let fecha_esperada = nueva_fecha.as_ref().unwrap();
+        assert!(fecha_obtenida.igual(fecha_esperada));
     }
 }
