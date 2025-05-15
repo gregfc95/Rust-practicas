@@ -8,14 +8,9 @@ técnico, otros).
  Para registrar un préstamo se requiere el libro, el cliente, la fecha de
 vencimiento del préstamo, la fecha de devolución y el estado que puede ser devuelto o en
 préstamo. Del cliente se conoce el nombre, teléfono y dirección de correo electrónico.
-
 Implemente los métodos necesarios para realizar las siguientes acciones:
-➔ obtener cantidad de copias: dado un determinado libro retorna la cantidad de
-copias a disposición que hay para prestar de dicho libro.
-➔ decrementar cantidad de copias a disposición; dado un libro decrementa en 1
-la cantidad de copias de libros a disposición para prestar.
-➔ incrementar cantidad de copias a disposición: dado un libro incrementa en 1
-la cantidad de copias del libro a disposición para ser prestado.
+
+
 ➔ contar préstamos de un cliente: devuelve la cantidad de préstamos en estado
 “en préstamo” de un determinado cliente.
 ➔ realizar un préstamo de un libro para un cliente: crea un préstamo de un libro
@@ -46,22 +41,37 @@ pub enum Genero {
     Tecnico,
     Otros,
 }
-
+#[derive(Debug, Clone)]
 pub enum Estado {
     EnPrestamo,
     Devuelto,
+}
+
+impl Estado {
+    pub fn devuelto(&self) -> bool {
+        match self {
+            Estado::Devuelto => true,
+            _ => false,
+        }
+    }
+    pub fn en_prestamo(&self) -> bool {
+        match self {
+            Estado::EnPrestamo => true,
+            _ => false,
+        }
+    }
 }
 
 struct Bibilioteca {
     nombre: String,
     direccion: String,
     libros_a_disposicion: Vec<Libros>,
-    clientes: Vec<Cliente>,
     prestamos: Vec<Prestamo>,
 }
 struct Libros {
     tupla_libro: (Libro, u32),
 }
+#[derive(Debug, Clone)]
 struct Libro {
     isbn: String,
     titulo: String,
@@ -69,19 +79,57 @@ struct Libro {
     num_paginas: u32,
     genero: Genero,
 }
-
+#[derive(Debug, Clone)]
 struct Cliente {
     nombre: String,
     telefono: String,
     email: String,
 }
 
+impl Cliente {
+    pub fn new(nombre: String, telefono: String, email: String) -> Self {
+        Cliente {
+            nombre,
+            telefono,
+            email,
+        }
+    }
+
+    pub fn igual(&self, otro: &Cliente) -> bool {
+        self.nombre == otro.nombre && self.telefono == otro.telefono && self.email == otro.email
+    }
+}
+#[derive(Debug, Clone)]
 struct Prestamo {
     libro: Libro,
     cliente: Cliente,
     fecha_vencimiento: Fecha,
-    fecha_devolucion: Fecha,
+    fecha_devolucion: Option<Fecha>,
     estado: Estado,
+}
+impl Prestamo {
+    pub fn new(
+        libro: Libro,
+        cliente: Cliente,
+        fecha_vencimiento: Fecha,
+        fecha_devolucion: Option<Fecha>,
+        estado: Estado,
+    ) -> Self {
+        Prestamo {
+            libro,
+            cliente,
+            fecha_vencimiento,
+            fecha_devolucion,
+            estado,
+        }
+    }
+    pub fn contar_prestado_cliente(&self, cliente: &Cliente) -> u32 {
+        if self.cliente.igual(cliente) && self.estado.en_prestamo() {
+            1
+        } else {
+            0
+        }
+    }
 }
 
 impl Bibilioteca {
@@ -89,43 +137,116 @@ impl Bibilioteca {
         nombre: String,
         direccion: String,
         libros_a_disposicion: Vec<Libros>,
-        clientes: Vec<Cliente>,
         prestamos: Vec<Prestamo>,
     ) -> Self {
         Bibilioteca {
             nombre,
             direccion,
             libros_a_disposicion,
-            clientes,
             prestamos,
         }
     }
 
-    pub fn incrementar_copia_libro(&mut self, libro: Libro) {
+    pub fn ver_prestamo_a_vencer(&self, fecha_hoy: &Fecha, dias: u32) -> Vec<Prestamo> {
+        let mut a_vencer = Vec::new();
+        if let Some(fecha_limite) = fecha_hoy.sumar_dias(dias) {
+            for prestamo in &self.prestamos {
+                let fecha_vencimiento = &prestamo.fecha_vencimiento;
+                if fecha_limite.es_mayor(fecha_vencimiento) && prestamo.estado.en_prestamo() {
+                    a_vencer.push(prestamo.clone());
+                }
+            }
+        }
+        a_vencer
+    }
+    pub fn ver_prestamos_vencidos(&self, fecha_hoy: &Fecha) -> Vec<Prestamo> {
+        let mut vencidos = Vec::new();
+        for prestamo in &self.prestamos {
+            if fecha_hoy.es_mayor(&prestamo.fecha_vencimiento) && prestamo.estado.en_prestamo() {
+                vencidos.push(prestamo.clone());
+            }
+        }
+        vencidos
+    }
+
+    pub fn realizar_prestamo(
+        &mut self,
+        libro: &Libro,
+        cliente: &Cliente,
+        fecha_vencimiento: Fecha,
+    ) -> bool {
+        if self.contar_prestamos_cliente(&cliente) < 5 && self.obtener_cant_copias(&libro) > 0 {
+            let prestamo = Prestamo::new(
+                libro.clone(),
+                cliente.clone(),
+                fecha_vencimiento,
+                None,
+                Estado::EnPrestamo,
+            );
+            self.prestamos.push(prestamo);
+            self.decrementar_copia_libro(libro);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn buscar_prestamo(&mut self, libro: &Libro, cliente: &Cliente) -> Option<&mut Prestamo> {
+        self.prestamos.iter_mut().find(|p| {
+            p.libro.igual_isbn(libro) && p.cliente.igual(cliente) && p.estado.en_prestamo()
+        })
+    }
+
+    pub fn devolver_libro(
+        &mut self,
+        libro: &Libro,
+        cliente: &Cliente,
+        fecha_devolucion: Fecha,
+    ) -> bool {
+        if let Some(prestamo) = self.buscar_prestamo(libro, cliente) {
+            prestamo.estado = Estado::Devuelto;
+            prestamo.fecha_devolucion = Some(fecha_devolucion);
+            self.incrementar_copia_libro(libro);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn contar_prestamos_cliente(&self, cliente: &Cliente) -> u32 {
+        let mut contador = 0;
+        for prestamo in &self.prestamos {
+            if prestamo.cliente.igual(cliente) && prestamo.estado.en_prestamo() {
+                contador += 1;
+            }
+        }
+        contador
+    }
+    pub fn incrementar_copia_libro(&mut self, libro: &Libro) {
         if let Some(index) = self
             .libros_a_disposicion
             .iter()
-            .position(|L| L.tupla_libro.0.igual_isbn(&libro))
+            .position(|l| l.tupla_libro.0.igual_isbn(&libro))
         {
             self.libros_a_disposicion[index].incrementar();
         }
     }
 
-    pub fn decrementar_copia_libro(&mut self, libro: Libro) {
+    pub fn decrementar_copia_libro(&mut self, libro: &Libro) {
         if let Some(index) = self
             .libros_a_disposicion
             .iter()
-            .position(|L| L.tupla_libro.0.igual_isbn(&libro))
+            .position(|l| l.tupla_libro.0.igual_isbn(&libro))
         {
             self.libros_a_disposicion[index].decrementar();
         }
     }
 
-    pub fn obtener_cant_copias(&self, libro: Libro) -> u32 {
+    pub fn obtener_cant_copias(&self, libro: &Libro) -> u32 {
         if let Some(index) = self
             .libros_a_disposicion
             .iter()
-            .position(|L| L.tupla_libro.0.igual_isbn(&libro))
+            .position(|l| l.tupla_libro.0.igual_isbn(&libro))
         {
             self.libros_a_disposicion[index].tupla_libro.1
         } else {
