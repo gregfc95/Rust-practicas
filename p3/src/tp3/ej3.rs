@@ -12,7 +12,7 @@ la fecha pasada por parámetro.
 */
 
 use chrono::prelude::*;
-
+#[derive(Debug, Clone)]
 pub struct Fecha {
     dia: u32,
     mes: u32,
@@ -51,6 +51,9 @@ impl Fecha {
     pub fn es_mayor(&self, otra_fecha: &Self) -> bool {
         NaiveDate::from_ymd_opt(self.anio, self.mes, self.dia)
             > NaiveDate::from_ymd_opt(otra_fecha.anio, otra_fecha.mes, otra_fecha.dia)
+    }
+    pub fn igual(&self, otra: &Fecha) -> bool {
+        self.dia == otra.dia && self.mes == otra.mes && self.anio == otra.anio
     }
 }
 
