@@ -10,7 +10,12 @@ vencimiento del préstamo, la fecha de devolución y el estado que puede ser dev
 préstamo. Del cliente se conoce el nombre, teléfono y dirección de correo electrónico.
 Implemente los métodos necesarios para realizar las siguientes acciones:
 
-
+➔ obtener cantidad de copias: dado un determinado libro retorna la cantidad de
+copias a disposición que hay para prestar de dicho libro.
+➔ decrementar cantidad de copias a disposición; dado un libro decrementa en 1
+la cantidad de copias de libros a disposición para prestar.
+➔ incrementar cantidad de copias a disposición: dado un libro incrementa en 1
+la cantidad de copias del libro a disposición para ser prestado.
 ➔ contar préstamos de un cliente: devuelve la cantidad de préstamos en estado
 “en préstamo” de un determinado cliente.
 ➔ realizar un préstamo de un libro para un cliente: crea un préstamo de un libro
@@ -31,7 +36,6 @@ estado “devuelto”, se registra la fecha de devolución y se incrementa la
 cantidad de libros en 1 del libro devuelto en el registro de copias a
 disposición.
 Nota: para la fecha utilice lo implementado en el punto 3.
-
 */
 use crate::tp3::ej3::Fecha;
 #[derive(Debug, Clone)]
@@ -290,5 +294,246 @@ impl Libros {
         if self.tupla_libro.1 > 0 {
             self.tupla_libro.1 -= 1;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_obtener_cantidad_de_copias() {
+        let libro = Libro::new(
+            "123".to_string(),
+            "Rust Book".to_string(),
+            "Ferris".to_string(),
+            300,
+            Genero::Tecnico,
+        );
+
+        let libros = vec![Libros::new(libro.clone(), 3)];
+        let biblioteca = Bibilioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            libros,
+            vec![],
+        );
+
+        let cantidad = biblioteca.obtener_cant_copias(&libro);
+        assert_eq!(cantidad, 3);
+    }
+
+    #[test]
+    fn test_decrementar_cantidad_de_copias() {
+        let libro = Libro::new(
+            "123".to_string(),
+            "Rust Book".to_string(),
+            "Ferris".to_string(),
+            300,
+            Genero::Tecnico,
+        );
+        let libros = vec![Libros::new(libro.clone(), 3)];
+        let mut biblioteca = Bibilioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            libros,
+            vec![],
+        );
+
+        biblioteca.decrementar_copia_libro(&libro);
+        let cantidad = biblioteca.obtener_cant_copias(&libro);
+        assert_eq!(cantidad, 2);
+    }
+
+    #[test]
+    fn test_incrementar_cantidad_de_copias() {
+        let libro = Libro::new(
+            "123".to_string(),
+            "Rust Book".to_string(),
+            "Ferris".to_string(),
+            300,
+            Genero::Tecnico,
+        );
+        let libros = vec![Libros::new(libro.clone(), 3)];
+        let mut biblioteca = Bibilioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            libros,
+            vec![],
+        );
+
+        biblioteca.incrementar_copia_libro(&libro);
+        let cantidad = biblioteca.obtener_cant_copias(&libro);
+        assert_eq!(cantidad, 4);
+    }
+
+    #[test]
+    fn test_contar_prestamos_cliente() {
+        let libro = Libro::new(
+            "123".to_string(),
+            "Rust Book".to_string(),
+            "Ferris".to_string(),
+            300,
+            Genero::Tecnico,
+        );
+        let cliente = Cliente::new(
+            "José".to_string(),
+            "123456789".to_string(),
+            "jose@mail.com".to_string(),
+        );
+        let fecha = Fecha::new(20, 5, 2025).expect("Fecha inválida");
+        let libros = vec![Libros::new(libro.clone(), 3)];
+        let mut biblioteca = Bibilioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            libros,
+            vec![],
+        );
+        biblioteca.realizar_prestamo(&libro, &cliente, fecha.clone());
+        biblioteca.realizar_prestamo(&libro, &cliente, fecha.clone());
+        assert_eq!(biblioteca.contar_prestamos_cliente(&cliente), 2);
+    }
+
+    #[test]
+    fn test_realizar_prestamo_exitoso() {
+        let libro = Libro::new(
+            "123".to_string(),
+            "Rust Book".to_string(),
+            "Ferris".to_string(),
+            300,
+            Genero::Tecnico,
+        );
+        let cliente = Cliente::new(
+            "José".to_string(),
+            "123456789".to_string(),
+            "jose@mail.com".to_string(),
+        );
+        let fecha = Fecha::new(20, 5, 2025).expect("Fecha inválida");
+        let libros = vec![Libros::new(libro.clone(), 3)];
+        let mut biblioteca = Bibilioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            libros,
+            vec![],
+        );
+        let exito = biblioteca.realizar_prestamo(&libro, &cliente, fecha.clone());
+        assert!(exito);
+        assert_eq!(biblioteca.obtener_cant_copias(&libro), 2);
+    }
+
+    #[test]
+    fn test_realizar_prestamo_falla_por_limite() {
+        let libro = Libro::new(
+            "123".to_string(),
+            "Rust Book".to_string(),
+            "Ferris".to_string(),
+            300,
+            Genero::Tecnico,
+        );
+        let cliente = Cliente::new(
+            "José".to_string(),
+            "123456789".to_string(),
+            "jose@mail.com".to_string(),
+        );
+        let fecha = Fecha::new(20, 5, 2025).expect("Fecha inválida");
+        let libros = vec![Libros::new(libro.clone(), 3)];
+        let mut biblioteca = Bibilioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            libros,
+            vec![],
+        );
+        for _ in 0..5 {
+            biblioteca.realizar_prestamo(&libro, &cliente, fecha.clone());
+        }
+        let exito = biblioteca.realizar_prestamo(&libro, &cliente, fecha);
+        assert!(!exito);
+    }
+
+    #[test]
+    fn test_ver_prestamos_a_vencer() {
+        let libro = Libro::new(
+            "123".to_string(),
+            "Rust Book".to_string(),
+            "Ferris".to_string(),
+            300,
+            Genero::Tecnico,
+        );
+        let cliente = Cliente::new(
+            "José".to_string(),
+            "123456789".to_string(),
+            "jose@mail.com".to_string(),
+        );
+        let fecha = Fecha::new(20, 5, 2025).expect("Fecha inválida");
+        let libros = vec![Libros::new(libro.clone(), 3)];
+        let mut biblioteca = Bibilioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            libros,
+            vec![],
+        );
+        let fecha_vencimiento = fecha.sumar_dias(3).unwrap();
+        biblioteca.realizar_prestamo(&libro, &cliente, fecha_vencimiento.clone());
+
+        let proximos = biblioteca.ver_prestamo_a_vencer(&fecha, 5);
+        assert_eq!(proximos.len(), 1);
+    }
+    #[test]
+    fn test_ver_prestamos_vencidos() {
+        let libro = Libro::new(
+            "123".to_string(),
+            "Rust Book".to_string(),
+            "Ferris".to_string(),
+            300,
+            Genero::Tecnico,
+        );
+        let cliente = Cliente::new(
+            "José".to_string(),
+            "123456789".to_string(),
+            "jose@mail.com".to_string(),
+        );
+        let libros = vec![Libros::new(libro.clone(), 3)];
+        let mut biblioteca = Bibilioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            libros,
+            vec![],
+        );
+        let fecha_prestamo = Fecha::new(1, 4, 2025).expect("fecha invalida");
+        let hoy = Fecha::new(15, 5, 2025).expect("fecha invalida");
+
+        biblioteca.realizar_prestamo(&libro, &cliente, fecha_prestamo);
+
+        let vencidos = biblioteca.ver_prestamos_vencidos(&hoy);
+        assert_eq!(vencidos.len(), 1);
+    }
+
+    #[test]
+    fn test_devolver_libro() {
+        let libro = Libro::new(
+            "123".to_string(),
+            "Rust Book".to_string(),
+            "Ferris".to_string(),
+            300,
+            Genero::Tecnico,
+        );
+        let cliente = Cliente::new(
+            "José".to_string(),
+            "123456789".to_string(),
+            "jose@mail.com".to_string(),
+        );
+        let fecha = Fecha::new(20, 5, 2025).expect("Fecha inválida");
+        let libros = vec![Libros::new(libro.clone(), 3)];
+        let mut biblioteca = Bibilioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            libros,
+            vec![],
+        );
+        biblioteca.realizar_prestamo(&libro, &cliente, fecha.clone());
+
+        let devuelto = biblioteca.devolver_libro(&libro, &cliente, fecha.clone());
+        assert!(devuelto);
+        assert_eq!(biblioteca.obtener_cant_copias(&libro), 3);
     }
 }
