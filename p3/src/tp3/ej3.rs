@@ -38,14 +38,24 @@ impl Fecha {
             .leap_year()
     }
 
-    pub fn sumar_dias(&self, dias: u32) -> Option<NaiveDate> {
+    pub fn sumar_dias(&self, dias: u32) -> Option<Fecha> {
         NaiveDate::from_ymd_opt(self.anio, self.mes, self.dia)?
             .checked_add_days(chrono::Days::new(dias.into()))
+            .map(|d| Fecha {
+                anio: d.year(),
+                mes: d.month(),
+                dia: d.day(),
+            })
     }
 
-    pub fn restar_dias(&self, dias: u32) -> Option<NaiveDate> {
+    pub fn restar_dias(&self, dias: u32) -> Option<Fecha> {
         NaiveDate::from_ymd_opt(self.anio, self.mes, self.dia)?
             .checked_sub_days(chrono::Days::new(dias.into()))
+            .map(|d| Fecha {
+                anio: d.year(),
+                mes: d.month(),
+                dia: d.day(),
+            })
     }
 
     pub fn es_mayor(&self, otra_fecha: &Self) -> bool {
@@ -102,9 +112,9 @@ mod tests {
         let fecha = Fecha::new(29, 12, 2000).expect("Fecha inválida");
         let resultado = fecha.sumar_dias(3).expect("Error al sumar días");
 
-        assert_eq!(resultado.month(), 1);
-        assert_eq!(resultado.day(), 1);
-        assert_eq!(resultado.year(), 2001);
+        assert_eq!(resultado.mes, 1);
+        assert_eq!(resultado.dia, 1);
+        assert_eq!(resultado.anio, 2001);
     }
 
     #[test]
@@ -112,9 +122,9 @@ mod tests {
         let fecha = Fecha::new(1, 1, 2000).expect("Fecha inválida");
         let resultado = fecha.restar_dias(3).expect("Error al restar días");
 
-        assert_eq!(resultado.month(), 12);
-        assert_eq!(resultado.day(), 29);
-        assert_eq!(resultado.year(), 1999);
+        assert_eq!(resultado.mes, 12);
+        assert_eq!(resultado.dia, 29);
+        assert_eq!(resultado.anio, 1999);
     }
 
     #[test]
