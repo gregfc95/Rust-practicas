@@ -22,13 +22,7 @@ pub fn ej3() {
         if numero == 0 {
             break;
         }
-        println!("Los números ingresados son: {:?}", numeros);
     }
-    println!("La suma de los números pares es: {}", sum_pares(&numeros));
-    println!(
-        "La suma de los números impares es: {}",
-        sum_impares(&numeros)
-    );
 }
 
 fn sum_pares(numeros: &[i32]) -> i32 {
@@ -49,4 +43,21 @@ fn sum_impares(numeros: &[i32]) -> i32 {
         }
     }
     sum
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sum_pares() {
+        let numeros = vec![1, 2, 3, 4, 5];
+        assert_eq!(sum_pares(&numeros), 6);
+    }
+
+    #[test]
+    fn test_sum_impares() {
+        let numeros = vec![1, 2, 3, 4, 5];
+        assert_eq!(sum_impares(&numeros), 9);
+    }
 }

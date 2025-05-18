@@ -14,7 +14,6 @@ pub fn ej2() {
         .expect("Error al leer la entrada");
     num = input.trim().parse().expect("Error al convertir el número");
     let es_primo = es_primo(num);
-    println!("El número {} es primo: {}", num, es_primo);
 }
 
 fn es_primo(num: i32) -> bool {
@@ -30,4 +29,21 @@ fn es_primo(num: i32) -> bool {
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_es_primo() {
+        assert_eq!(es_primo(2), true);
+        assert_eq!(es_primo(3), true);
+        assert_eq!(es_primo(4), false);
+    }
+
+    #[test]
+    fn test_no_es_primo() {
+        assert_eq!(es_primo(1), false);
+    }
 }
