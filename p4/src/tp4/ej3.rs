@@ -286,24 +286,90 @@ impl Usuario {
         }
     }
 }
-
-pub fn mediopago_activo_mas_utilizado(usuarios: Vec<Usuario>) -> Option<MedioPagoTipo> {
-    //Aplano para poder contarlas.
-    let todas_las_subs: Vec<MedioPagoTipo> = usuarios
-        .iter()
-        .flat_map(|usuario| usuario.subscripcion_activa.clone())
-        .map(|subs| subs.medio_pago.clone())
-        .collect();
-
-    let mut conteo: HashMap<MedioPagoTipo, usize> = HashMap::new();
-    for medio in todas_las_subs {
-        *conteo.entry(medio.clone()).or_insert(0) += 1;
+impl StreamingRust {
+    fn new() -> Self {
+        StreamingRust {
+            usuarios: Vec::new(),
+        }
     }
-    conteo
-        .into_iter()
-        .max_by_key(|&(_, cantidad)| cantidad)
-        .map(|(medio, _)| medio)
+    /// Agrega un nuevo usuario a la plataforma.
+    fn agregar_usuario(&mut self, usuario: Usuario) {
+        self.usuarios.push(usuario);
+    }
+    /// medio de pago más utilizado por los usuarios sobre las suscripciones activas.
+    fn medio_pago_activo_mas_utilizado(&self) -> Option<MedioPagoTipo> {
+        let mut conteo: HashMap<MedioPagoTipo, usize> = HashMap::new();
+        for usuario in &self.usuarios {
+            if let Some(subs) = &usuario.subscripcion_activa {
+                *conteo.entry(subs.medio_pago.clone()).or_insert(0) += 1;
+            }
+        }
+        conteo
+            .into_iter()
+            .max_by_key(|&(_, cantidad)| cantidad)
+            .map(|(medio, _)| medio)
+    }
+    /// Suscripción más utilizada por los usuarios sobre las suscripciones activas.
+    fn subscripcion_activo_mas_utilizado(&self) -> Option<SubscripcionTipo> {
+        let mut conteo: HashMap<SubscripcionTipo, usize> = HashMap::new();
+        for usuario in &self.usuarios {
+            if let Some(subs) = &usuario.subscripcion_activa {
+                *conteo.entry(subs.tipo.clone()).or_insert(0) += 1;
+            }
+        }
+        conteo
+            .into_iter()
+            .max_by_key(|&(_, cantidad)| cantidad)
+            .map(|(tipo, _)| tipo)
+    }
+
+    /// Suscripción más contratada por los usuarios sobre el historial de suscripciones.
+    fn subscripcion_mas_contratada(&self) -> Option<SubscripcionTipo> {
+        let mut conteo: HashMap<SubscripcionTipo, usize> = HashMap::new();
+        for usuario in &self.usuarios {
+            for subs in &usuario.historial_suscripciones {
+                *conteo.entry(subs.tipo.clone()).or_insert(0) += 1;
+            }
+        }
+        conteo
+            .into_iter()
+            .max_by_key(|&(_, cantidad)| cantidad)
+            .map(|(tipo, _)| tipo)
+    }
+
+    /// Medio de pago más utilizado por los usuarios sobre el historial de suscripciones.
+    fn medio_pago_mas_utilizado(&self) -> Option<MedioPagoTipo> {
+        let mut conteo: HashMap<MedioPagoTipo, usize> = HashMap::new();
+        for usuario in &self.usuarios {
+            for subs in &usuario.historial_suscripciones {
+                *conteo.entry(subs.medio_pago.clone()).or_insert(0) += 1;
+            }
+        }
+        conteo
+            .into_iter()
+            .max_by_key(|&(_, cantidad)| cantidad)
+            .map(|(medio, _)| medio)
+    }
 }
+
+/* pub fn mediopago_activo_mas_utilizado(usuarios: Vec<Usuario>) -> Option<MedioPagoTipo> {
+//Aplano para poder contarlas.
+let todas_las_subs: Vec<MedioPagoTipo> = usuarios
+    .iter()
+    .flat_map(|usuario| usuario.subscripcion_activa.clone())
+    .map(|subs| subs.medio_pago.clone())
+    .collect();
+
+let mut conteo: HashMap<MedioPagoTipo, usize> = HashMap::new();
+for medio in todas_las_subs {
+    *conteo.entry(medio.clone()).or_insert(0) += 1;
+}
+conteo
+    .into_iter()
+    .max_by_key(|&(_, cantidad)| cantidad)
+    .map(|(medio, _)| medio)
+}
+
 
 pub fn suscripcion_activo_mas_utilizado(usuarios: Vec<Usuario>) -> Option<SubscripcionTipo> {
     //Aplano las suscripciones, para poder contarlas.
@@ -324,7 +390,7 @@ pub fn suscripcion_activo_mas_utilizado(usuarios: Vec<Usuario>) -> Option<Subscr
         .map(|(tipo, _)| tipo)
 }
 
-pub fn subscripcion_mas_contratada(usuarios: Vec<Usuario>) -> Option<SubscripcionTipo> {
+        pub fn subscripcion_mas_contratada(usuarios: Vec<Usuario>) -> Option<SubscripcionTipo> {
     //Aplano las suscripciones, para poder contarlas.
     let todas_las_subs: Vec<Subscripcion> = usuarios
         .iter()
@@ -340,6 +406,7 @@ pub fn subscripcion_mas_contratada(usuarios: Vec<Usuario>) -> Option<Subscripcio
         .max_by_key(|&(_, cantidad)| cantidad)
         .map(|(tipo, _)| tipo)
 }
+
 
 pub fn medio_mas_utilizado(usuarios: Vec<Usuario>) -> Option<MedioPagoTipo> {
     let todos_los_medios_pago: Vec<MedioPagoTipo> = usuarios
@@ -360,4 +427,4 @@ pub fn medio_mas_utilizado(usuarios: Vec<Usuario>) -> Option<MedioPagoTipo> {
         .into_iter()
         .max_by_key(|&(_, cantidad)| cantidad)
         .map(|(medio, _)| medio)
-}
+*/
