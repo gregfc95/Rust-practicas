@@ -11,16 +11,16 @@
 - Conceptos clave:
 - Ejemplos de código:
 - Dudas o preguntas:
-Tipo	Qué es	Cuándo usarlo
-String	Cadena propietaria (heap)	Cuando vas a modificar, guardar o clonar
-&str	Referencia a una cadena (inmutable)	Cuando solo leés o comparás
+
 ---
 
 ## Tema 3: Tipos de Datos y Estructuras
 - Conceptos clave:
 - Ejemplos de código:
 - Dudas o preguntas:
-
+Tipo	Qué es	Cuándo usarlo
+String	Cadena propietaria (heap)	Cuando vas a modificar, guardar o clonar
+&str	Referencia a una cadena (inmutable)	Cuando solo leés o comparás
 ---
 
 ## Tema 4: Manejo de Errores
