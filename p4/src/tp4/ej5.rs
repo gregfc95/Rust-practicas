@@ -544,112 +544,293 @@ impl Plataforma {
 mod tests {
     use super::*;
 
-    fn usuario_de_prueba() -> Usuario {
-        Usuario::new(
-            1,
-            "José".to_string(),
-            "Pérez".to_string(),
-            "jose@example.com".to_string(),
-            "12345678".to_string(),
-            false,
-        )
-    }
-
     fn fecha_dummy() -> Fecha {
         Fecha::new(1, 1, 2000).expect("Fecha inválida en fecha_dummy")
     }
-
-    fn plataforma_dummy() -> Plataforma {
-        let mut plataforma = Plataforma::new();
-        plataforma.agregar_usuario(usuario_de_prueba());
-        plataforma
-    }
-
-    #[test]
-    fn ingresar_dinero_usuario_existente() {
-        let mut plataforma = plataforma_dummy();
-        let resultado =
-            plataforma.ingresar_dinero(1, 1000.0, fecha_dummy(), MedioPago::MercadoPago);
-
-        assert!(resultado.is_ok());
-        let usuario = plataforma
-            .usuarios
-            .iter()
-            .find(|u| u.dni == "12345678")
-            .unwrap();
-        assert_eq!(usuario.balance_fiat, 1000.0);
-        assert_eq!(plataforma.transacciones_fiat.len(), 1);
-
-        let tx = &plataforma.transacciones_fiat[0];
-        assert_eq!(tx.transaccion.tipo, TipoTransaccion::IngresoDinero);
-        assert_eq!(tx.transaccion.monto, 1000.0);
-        assert_eq!(tx.transaccion.usuario_id, 1);
-    }
-
-    #[test]
-    fn test_usuario_no_encontrado() {
-        let mut plataforma = plataforma_dummy();
-        let resultado = plataforma.buscar_usuario_mut(99999999);
-        assert!(resultado.is_none());
-    }
-
-    #[test]
-    fn test_monto_valido_negativo() {
-        assert_eq!(
-            Plataforma::monto_valido(0.0),
-            Err(PlataformaError::MontoInvalido(0.0))
-        );
-        assert_eq!(
-            Plataforma::monto_valido(-5.0),
-            Err(PlataformaError::MontoInvalido(-5.0))
-        );
-    }
-
-    #[test]
-    fn test_monto_valido_positivo() {
-        assert!(Plataforma::monto_valido(10.0).is_ok());
-    }
-
-    #[test]
-    fn ingresar_dinero_usuario_inexistente() {
-        let mut plataforma = plataforma_dummy();
-
-        let resultado =
-            plataforma.ingresar_dinero(99999999, 1000.0, fecha_dummy(), MedioPago::MercadoPago);
-
-        assert!(resultado.is_err());
-        if let Err(PlataformaError::UsuarioNoEncontrado(dni)) = resultado {
-            assert_eq!(dni, 99999999);
-        } else {
-            panic!("Se esperaba PlataformaError::UsuarioNoEncontrado");
-        }
-
-        assert_eq!(plataforma.transacciones_fiat.len(), 0);
-    }
-
-    #[test]
-    fn usuario_validado() {
-        let user_validado = Usuario::new(
-            1,
-            "José".to_string(),
-            "Pérez".to_string(),
-            "jose@example.com".to_string(),
-            "12345678".to_string(),
+    fn usuario_validado(id: u32) -> Usuario {
+        Usuario::new(
+            id,
+            "Ana".to_string(),
+            "García".to_string(),
+            "ana@mail.com".to_string(),
+            "11111111".to_string(),
             true,
-        );
-        assert!(user_validado.validado);
+        )
+    }
+    fn usuario_no_validado(id: u32) -> Usuario {
+        Usuario::new(
+            id,
+            "Juan".to_string(),
+            "Pérez".to_string(),
+            "juan@mail.com".to_string(),
+            "22222222".to_string(),
+            false,
+        )
+    }
+    fn cripto_btc() -> Criptomoneda {
+        Criptomoneda {
+            nombre: "Bitcoin".to_string(),
+            prefijo: "BTC".to_string(),
+            blockchains: vec![blockchain_btc()],
+        }
+    }
+    fn cripto_eth() -> Criptomoneda {
+        Criptomoneda {
+            nombre: "Ethereum".to_string(),
+            prefijo: "ETH".to_string(),
+            blockchains: vec![blockchain_eth()],
+        }
+    }
+    fn blockchain_btc() -> Blockchain {
+        Blockchain {
+            nombre: "BitcoinChain".to_string(),
+            prefijo: "BTC".to_string(),
+        }
+    }
+    fn blockchain_eth() -> Blockchain {
+        Blockchain {
+            nombre: "EthereumChain".to_string(),
+            prefijo: "ETH".to_string(),
+        }
+    }
+    fn plataforma_basica() -> Plataforma {
+        let mut p = Plataforma::new();
+        p.criptomonedas.push(cripto_btc());
+        p.criptomonedas.push(cripto_eth());
+        p.blockchains.push(blockchain_btc());
+        p.blockchains.push(blockchain_eth());
+        p.agregar_cotizacion("BTC".to_string(), 10000.0);
+        p.agregar_cotizacion("ETH".to_string(), 2000.0);
+        p
     }
 
     #[test]
-    fn usuario_no_validado() {
-        let user_no_validado = Usuario::new(
-            2,
-            "José".to_string(),
-            "Pérez".to_string(),
-            "jose@example.com".to_string(),
-            "12345678".to_string(),
-            false,
-        );
-        assert!(!user_no_validado.validado);
+    fn test_usuario_es_valido() {
+        let u = usuario_validado(1);
+        assert!(u.es_valido());
+        let u2 = usuario_no_validado(2);
+        assert!(!u2.es_valido());
+    }
+
+    #[test]
+    fn test_usuario_get_balance_fiat() {
+        let u = usuario_validado(1);
+        assert_eq!(u.get_balance_fiat(), 0.0);
+    }
+
+    #[test]
+    fn test_usuario_get_balance_cripto_none() {
+        let u = usuario_validado(1);
+        let btc = cripto_btc();
+        assert!(u.get_balance_cripto(&btc).is_err());
+    }
+
+    #[test]
+    fn test_blockchain_generar_hash() {
+        let b = blockchain_btc();
+        let hash = b.generar_hash();
+        assert!(hash.starts_with("BTC-"));
+    }
+
+    #[test]
+    fn test_plataforma_new() {
+        let p = Plataforma::new();
+        assert_eq!(p.usuarios.len(), 0);
+        assert_eq!(p.criptomonedas.len(), 0);
+        assert_eq!(p.blockchains.len(), 0);
+    }
+
+    #[test]
+    fn test_plataforma_agregar_usuario() {
+        let mut p = Plataforma::new();
+        p.agregar_usuario(usuario_validado(1));
+        assert_eq!(p.usuarios.len(), 1);
+    }
+
+    #[test]
+    fn test_plataforma_buscar_usuario_mut() {
+        let mut p = Plataforma::new();
+        p.agregar_usuario(usuario_validado(1));
+        assert!(p.buscar_usuario_mut(1).is_some());
+        assert!(p.buscar_usuario_mut(2).is_none());
+    }
+
+    #[test]
+    fn test_plataforma_obtener_usuario_mut() {
+        let mut p = Plataforma::new();
+        p.agregar_usuario(usuario_validado(1));
+        assert!(p.obtener_usuario_mut(1).is_ok());
+        assert!(p.obtener_usuario_mut(2).is_err());
+    }
+
+    #[test]
+    fn test_plataforma_monto_valido() {
+        assert!(Plataforma::monto_valido(10.0).is_ok());
+        assert!(Plataforma::monto_valido(0.0).is_err());
+        assert!(Plataforma::monto_valido(-1.0).is_err());
+    }
+
+    #[test]
+    fn test_plataforma_agregar_cotizacion_y_get() {
+        let mut p = Plataforma::new();
+        p.agregar_cotizacion("BTC".to_string(), 10000.0);
+        assert_eq!(p.get_cotizacion("BTC").unwrap(), 10000.0);
+        assert!(p.get_cotizacion("ETH").is_err());
+    }
+
+    #[test]
+    fn test_plataforma_get_criptomoneda() {
+        let mut p = Plataforma::new();
+        p.criptomonedas.push(cripto_btc());
+        assert!(p.get_criptomoneda("BTC").is_ok());
+        assert!(p.get_criptomoneda("ETH").is_err());
+    }
+
+    #[test]
+    fn test_plataforma_existe_blockchain() {
+        let mut p = Plataforma::new();
+        p.blockchains.push(blockchain_btc());
+        assert!(p.existe_blockchain("BTC").is_ok());
+        assert!(p.existe_blockchain("ETH").is_err());
+    }
+
+    #[test]
+    fn test_plataforma_ingresar_dinero() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let res = p.ingresar_dinero(1, 1000.0, fecha_dummy(), MedioPago::MercadoPago);
+        assert!(res.is_ok());
+        let u = p.buscar_usuario_mut(1).unwrap();
+        assert_eq!(u.balance_fiat, 1000.0);
+        assert_eq!(p.transacciones_fiat.len(), 1);
+    }
+
+    #[test]
+    fn test_plataforma_retirar_dinero() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        p.ingresar_dinero(1, 1000.0, fecha_dummy(), MedioPago::MercadoPago)
+            .unwrap();
+        let res = p.retirar_dinero(1, 500.0, fecha_dummy(), MedioPago::TransferenciaBancaria);
+        assert!(res.is_ok());
+        let u = p.buscar_usuario_mut(1).unwrap();
+        assert_eq!(u.balance_fiat, 500.0);
+        assert_eq!(p.transacciones_fiat.len(), 2);
+    }
+
+    #[test]
+    fn test_plataforma_comprar_cripto() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        p.ingresar_dinero(1, 10000.0, fecha_dummy(), MedioPago::MercadoPago)
+            .unwrap();
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let res = p.comprar_cripto(1, 5000.0, fecha_dummy(), btc.clone());
+        assert!(res.is_ok());
+        let u = p.buscar_usuario_mut(1).unwrap();
+        // 5000 / 10000 = 0.5 BTC
+        assert!((u.get_balance_cripto(&btc).unwrap() - 0.5).abs() < 0.0001);
+        assert_eq!(u.balance_fiat, 5000.0);
+        assert_eq!(p.transacciones_cripto.len(), 1);
+    }
+
+    #[test]
+    fn test_plataforma_vender_cripto() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        p.ingresar_dinero(1, 10000.0, fecha_dummy(), MedioPago::MercadoPago)
+            .unwrap();
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        p.comprar_cripto(1, 5000.0, fecha_dummy(), btc.clone())
+            .unwrap();
+        let res = p.vender_cripto(1, 2000.0, fecha_dummy(), btc.clone());
+        assert!(res.is_ok());
+        let u = p.buscar_usuario_mut(1).unwrap();
+        // Vendió 2000/10000 = 0.2 BTC
+        assert!((u.get_balance_cripto(&btc).unwrap() - 0.3).abs() < 0.0001);
+        assert!((u.balance_fiat - 7000.0).abs() < 0.0001);
+        assert_eq!(p.transacciones_cripto.len(), 2);
+    }
+
+    #[test]
+    fn test_plataforma_retirar_cripto_a_blockchain() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        p.ingresar_dinero(1, 10000.0, fecha_dummy(), MedioPago::MercadoPago)
+            .unwrap();
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        p.comprar_cripto(1, 10000.0, fecha_dummy(), btc.clone())
+            .unwrap();
+        let bc = p.existe_blockchain("BTC").unwrap();
+        let res = p.retirar_cripto_a_blockchain(1, 0.5, bc.clone(), btc.clone(), fecha_dummy());
+        assert!(res.is_ok());
+        let u = p.buscar_usuario_mut(1).unwrap();
+        assert!((u.get_balance_cripto(&btc).unwrap() - 0.5).abs() < 0.0001);
+        assert_eq!(p.transacciones_cripto.len(), 2);
+    }
+
+    #[test]
+    fn test_plataforma_recibir_cripto_desde_blockchain() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let bc = p.existe_blockchain("BTC").unwrap();
+        let res =
+            p.recibir_cripto_desde_blockchain(1, 0.25, bc.clone(), btc.clone(), fecha_dummy());
+        assert!(res.is_ok());
+        let u = p.buscar_usuario_mut(1).unwrap();
+        assert!((u.get_balance_cripto(&btc).unwrap() - 0.25).abs() < 0.0001);
+        assert_eq!(p.transacciones_cripto.len(), 1);
+    }
+
+    #[test]
+    fn test_plataforma_cripto_con_mas_ventas_y_compras() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        p.ingresar_dinero(1, 20000.0, fecha_dummy(), MedioPago::MercadoPago)
+            .unwrap();
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let eth = p.get_criptomoneda("ETH").unwrap();
+        p.comprar_cripto(1, 10000.0, fecha_dummy(), btc.clone())
+            .unwrap();
+        p.comprar_cripto(1, 4000.0, fecha_dummy(), eth.clone())
+            .unwrap();
+        p.comprar_cripto(1, 2000.0, fecha_dummy(), eth.clone())
+            .unwrap();
+        p.vender_cripto(1, 5000.0, fecha_dummy(), btc.clone())
+            .unwrap();
+        p.vender_cripto(1, 1000.0, fecha_dummy(), eth.clone())
+            .unwrap();
+        // Agrego una venta extra de BTC para que BTC tenga más ventas que ETH
+        p.vender_cripto(1, 1000.0, fecha_dummy(), btc.clone())
+            .unwrap();
+        // ETH tiene más compras (2), BTC más ventas (2)
+        assert_eq!(p.cripto_con_mas_compras().unwrap().prefijo, "ETH");
+        assert_eq!(p.cripto_con_mas_ventas().unwrap().prefijo, "BTC");
+    }
+
+    #[test]
+    fn test_plataforma_cripto_con_mayor_volumen_venta_y_compra() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        p.ingresar_dinero(1, 20000.0, fecha_dummy(), MedioPago::MercadoPago)
+            .unwrap();
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let eth = p.get_criptomoneda("ETH").unwrap();
+        p.comprar_cripto(1, 10000.0, fecha_dummy(), btc.clone())
+            .unwrap();
+        p.comprar_cripto(1, 4000.0, fecha_dummy(), eth.clone())
+            .unwrap();
+        p.comprar_cripto(1, 2000.0, fecha_dummy(), eth.clone())
+            .unwrap();
+        p.vender_cripto(1, 5000.0, fecha_dummy(), btc.clone())
+            .unwrap();
+        p.vender_cripto(1, 1000.0, fecha_dummy(), eth.clone())
+            .unwrap();
+        p.vender_cripto(1, 1000.0, fecha_dummy(), btc.clone())
+            .unwrap();
+        // Mayor volumen de compra: BTC (10000), venta: BTC (5000)
+        assert_eq!(p.cripto_con_mayor_volumen_compra().unwrap().prefijo, "BTC");
+        assert_eq!(p.cripto_con_mayor_volumen_venta().unwrap().prefijo, "BTC");
     }
 }
