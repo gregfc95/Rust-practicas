@@ -35,11 +35,16 @@ pub enum SubscripcionTipo {
     Clasic,
     Super,
 }
+#[derive(Debug)]
+enum ErrorSubscripcion {
+    UpgradeNoDisponible,
+    DowngradeNoDisponible,
+}
 /// Trait para controlar las acciones de suscripción de un usuario.
 //Esto me parece incorrecto. Fecha deberia ser manejado de otra forma, se deberia usar Chrono/naive_date
 trait SubscripcionControl {
-    fn upgrade(&mut self, fecha_actual: Fecha);
-    fn downgrade(&mut self, fecha_actual: Fecha);
+    fn upgrade(&mut self, fecha_actual: Fecha) -> Result<(), ErrorSubscripcion>;
+    fn downgrade(&mut self, fecha_actual: Fecha) -> Result<(), ErrorSubscripcion>;
     fn cancelar(&mut self);
 }
 
@@ -240,25 +245,35 @@ impl Subscripcion {
 // Este trait permite a los usuarios realizar acciones sobre sus suscripciones.
 // Implementa las acciones de upgrade, downgrade y cancelar suscripción.
 impl SubscripcionControl for Usuario {
-    fn upgrade(&mut self, fecha_actual: Fecha) {
+    fn upgrade(&mut self, fecha_actual: Fecha) -> Result<(), ErrorSubscripcion> {
         if let Some(ref mut subscripcion) = self.subscripcion_activa {
-            if let Some(next_subscripcion) = subscripcion.tipo.upgrade() {
+            if let Some(next_tipo) = subscripcion.tipo.upgrade() {
                 let anterior = subscripcion.clone();
                 self.historial_suscripciones.push(anterior);
-                let nuevo_pago = subscripcion.medio_pago.clone();
-                *subscripcion = Subscripcion::new(next_subscripcion, nuevo_pago, fecha_actual);
+                let medio_pago = subscripcion.medio_pago.clone();
+                *subscripcion = Subscripcion::new(next_tipo, medio_pago, fecha_actual);
+                Ok(())
+            } else {
+                Err(ErrorSubscripcion::UpgradeNoDisponible)
             }
+        } else {
+            Err(ErrorSubscripcion::UpgradeNoDisponible)
         }
     }
 
-    fn downgrade(&mut self, fecha_actual: Fecha) {
+    fn downgrade(&mut self, fecha_actual: Fecha) -> Result<(), ErrorSubscripcion> {
         if let Some(ref mut subscripcion) = self.subscripcion_activa {
-            if let Some(next_subscripcion) = subscripcion.tipo.downgrade() {
+            if let Some(prev_tipo) = subscripcion.tipo.downgrade() {
                 let anterior = subscripcion.clone();
                 self.historial_suscripciones.push(anterior);
-                let nuevo_pago = subscripcion.medio_pago.clone();
-                *subscripcion = Subscripcion::new(next_subscripcion, nuevo_pago, fecha_actual);
+                let medio_pago = subscripcion.medio_pago.clone();
+                *subscripcion = Subscripcion::new(prev_tipo, medio_pago, fecha_actual);
+                Ok(())
+            } else {
+                Err(ErrorSubscripcion::DowngradeNoDisponible)
             }
+        } else {
+            Err(ErrorSubscripcion::DowngradeNoDisponible)
         }
     }
     fn cancelar(&mut self) {
@@ -352,79 +367,261 @@ impl StreamingRust {
     }
 }
 
-/* pub fn mediopago_activo_mas_utilizado(usuarios: Vec<Usuario>) -> Option<MedioPagoTipo> {
-//Aplano para poder contarlas.
-let todas_las_subs: Vec<MedioPagoTipo> = usuarios
-    .iter()
-    .flat_map(|usuario| usuario.subscripcion_activa.clone())
-    .map(|subs| subs.medio_pago.clone())
-    .collect();
-
-let mut conteo: HashMap<MedioPagoTipo, usize> = HashMap::new();
-for medio in todas_las_subs {
-    *conteo.entry(medio.clone()).or_insert(0) += 1;
-}
-conteo
-    .into_iter()
-    .max_by_key(|&(_, cantidad)| cantidad)
-    .map(|(medio, _)| medio)
-}
-
-
-pub fn suscripcion_activo_mas_utilizado(usuarios: Vec<Usuario>) -> Option<SubscripcionTipo> {
-    //Aplano las suscripciones, para poder contarlas.
-    let todas_las_subs: Vec<SubscripcionTipo> = usuarios
-        .iter()
-        .flat_map(|usuario| usuario.subscripcion_activa.clone())
-        .map(|subs| subs.tipo.clone())
-        .collect();
-
-    let mut conteo: HashMap<SubscripcionTipo, usize> = HashMap::new();
-    for subs in todas_las_subs {
-        *conteo.entry(subs.clone()).or_insert(0) += 1;
+#[cfg(test)]
+mod tests {
+    use super::MedioPagoTipo::*;
+    use super::SubscripcionTipo::*;
+    use super::*;
+    fn fecha_dummy() -> Fecha {
+        Fecha::new(1, 1, 2000).expect("Fecha inválida en fecha_dummy")
     }
 
-    conteo
-        .into_iter()
-        .max_by_key(|&(_, cantidad)| cantidad)
-        .map(|(tipo, _)| tipo)
-}
-
-        pub fn subscripcion_mas_contratada(usuarios: Vec<Usuario>) -> Option<SubscripcionTipo> {
-    //Aplano las suscripciones, para poder contarlas.
-    let todas_las_subs: Vec<Subscripcion> = usuarios
-        .iter()
-        .flat_map(|usuario| usuario.historial_suscripciones.clone())
-        .collect();
-
-    let mut conteo: HashMap<SubscripcionTipo, usize> = HashMap::new();
-    for subs in todas_las_subs {
-        *conteo.entry(subs.tipo.clone()).or_insert(0) += 1;
+    fn titular_info() -> TitularInfo {
+        TitularInfo::new(
+            "Juan Perez".to_string(),
+            "1234".to_string(),
+            fecha_dummy(),
+            "999".to_string(),
+        )
     }
-    conteo
-        .into_iter()
-        .max_by_key(|&(_, cantidad)| cantidad)
-        .map(|(tipo, _)| tipo)
-}
-
-
-pub fn medio_mas_utilizado(usuarios: Vec<Usuario>) -> Option<MedioPagoTipo> {
-    let todos_los_medios_pago: Vec<MedioPagoTipo> = usuarios
-        .iter()
-        .flat_map(|usuario| {
-            usuario
-                .historial_suscripciones
-                .iter()
-                .map(|s| s.medio_pago.clone())
-        })
-        .collect();
-
-    let mut conteo: HashMap<MedioPagoTipo, usize> = HashMap::new();
-    for medio in todos_los_medios_pago {
-        *conteo.entry(medio.clone()).or_insert(0) += 1;
+    fn billetera_info() -> BilleteraInfo {
+        BilleteraInfo::new("Maria".to_string(), "CVU123".to_string(), "ID1".to_string())
     }
-    conteo
-        .into_iter()
-        .max_by_key(|&(_, cantidad)| cantidad)
-        .map(|(medio, _)| medio)
-*/
+    fn cripto_info() -> CriptoInfo {
+        CriptoInfo::new("WALLET1".to_string(), "ETH".to_string())
+    }
+    fn transferencia_info() -> TransferenciaInfo {
+        TransferenciaInfo::new("Pedro".to_string(), "CBU123".to_string(), "ID2".to_string())
+    }
+
+    fn sub_basic() -> Subscripcion {
+        Subscripcion::new(Basic, Efectivo, fecha_dummy())
+    }
+    fn sub_clasic() -> Subscripcion {
+        Subscripcion::new(Clasic, MercadoPago(billetera_info()), fecha_dummy())
+    }
+    fn sub_super() -> Subscripcion {
+        Subscripcion::new(Super, TarjetaDeCredito(titular_info()), fecha_dummy())
+    }
+
+    fn usuario_basic() -> Usuario {
+        Usuario::new(
+            "Juan".to_string(),
+            "juan@mail.com".to_string(),
+            sub_basic(),
+            fecha_dummy(),
+        )
+    }
+    fn usuario_clasic() -> Usuario {
+        Usuario::new(
+            "Maria".to_string(),
+            "maria@mail.com".to_string(),
+            sub_clasic(),
+            fecha_dummy(),
+        )
+    }
+    fn usuario_super() -> Usuario {
+        Usuario::new(
+            "Pedro".to_string(),
+            "pedro@mail.com".to_string(),
+            sub_super(),
+            fecha_dummy(),
+        )
+    }
+
+    #[test]
+    fn test_upgrade_de_basic_a_clasic() {
+        let mut user = usuario_basic();
+        let result = user.upgrade(fecha_dummy());
+        assert!(result.is_ok(),);
+
+        let subs_activa = user
+            .subscripcion_activa
+            .as_ref()
+            .expect("Debería haber una subscripción activa");
+        assert_eq!(subs_activa.tipo, Clasic);
+    }
+    #[test]
+    fn test_upgrade_de_clasic_a_super() {
+        let mut user = usuario_clasic();
+        let result = user.upgrade(fecha_dummy());
+        assert!(result.is_ok(),);
+
+        let subs_activa = user
+            .subscripcion_activa
+            .as_ref()
+            .expect("Debería haber una subscripción activa");
+        assert_eq!(subs_activa.tipo, Super);
+    }
+    #[test]
+    fn test_upgrade_de_super_falla() {
+        let mut user = usuario_super();
+        let result = user.upgrade(fecha_dummy());
+
+        assert!(matches!(
+            result,
+            Err(ErrorSubscripcion::UpgradeNoDisponible)
+        ));
+
+        let subs_activa = user
+            .subscripcion_activa
+            .as_ref()
+            .expect("Debería seguir habiendo una subscripción activa");
+        assert_eq!(
+            subs_activa.tipo, Super,
+            "El tipo de subscripción debería seguir siendo Super"
+        );
+    }
+
+    #[test]
+    fn test_downgrade_de_super_a_clasic() {
+        let mut user = usuario_super();
+        let result = user.downgrade(fecha_dummy());
+        assert!(
+            result.is_ok(),
+            "El downgrade de Super a Clasic debería ser válido"
+        );
+
+        let subs_activa = user
+            .subscripcion_activa
+            .as_ref()
+            .expect("Debería haber una subscripción activa");
+        assert_eq!(subs_activa.tipo, Clasic);
+    }
+    #[test]
+    fn test_downgrade_de_clasic_a_basic() {
+        let mut user = usuario_clasic();
+        let result = user.downgrade(fecha_dummy());
+        assert!(
+            result.is_ok(),
+            "El downgrade de Clasic a Basic debería ser válido"
+        );
+
+        let subs_activa = user
+            .subscripcion_activa
+            .as_ref()
+            .expect("Debería haber una subscripción activa");
+        assert_eq!(subs_activa.tipo, Basic);
+    }
+
+    #[test]
+    fn test_downgrade_de_basic_falla() {
+        let mut user = usuario_basic();
+        let result = user.downgrade(fecha_dummy());
+
+        assert!(
+            matches!(result, Err(ErrorSubscripcion::DowngradeNoDisponible)),
+            "El downgrade desde Basic debería fallar con el error adecuado"
+        );
+
+        let subs_activa = user
+            .subscripcion_activa
+            .as_ref()
+            .expect("Deberia seguir habiendo una subscripcion activa");
+        assert_eq!(
+            subs_activa.tipo, Basic,
+            "El tipo de subscripcion deberia seguir siendo Basic"
+        );
+    }
+
+    #[test]
+    fn test_cancelar_con_subscripcion_activa() {
+        let mut user = usuario_basic();
+        let cantidad_historial_antes = user.historial_suscripciones.len();
+
+        user.cancelar();
+
+        assert!(
+            user.subscripcion_activa.is_none(),
+            "La suscripcion activa deberia haber sido eliminada"
+        );
+        assert_eq!(
+            user.historial_suscripciones.len(),
+            cantidad_historial_antes + 1,
+            "La suscripcion cancelada deberia haberse agregado al historial"
+        );
+    }
+
+    #[test]
+    fn test_cancelar_sin_subscripcion_activa_no_paniquear() {
+        let mut user = usuario_basic();
+        user.cancelar(); // Primera vez: debería cancelarla
+        let historial_despues_1 = user.historial_suscripciones.len();
+
+        user.cancelar(); // Segunda vez: no debería hacer nada
+
+        assert!(
+            user.subscripcion_activa.is_none(),
+            "No deberia haber una suscripcion activa después de cancelar dos veces"
+        );
+        assert_eq!(
+            user.historial_suscripciones.len(),
+            historial_despues_1,
+            "El historial no debería haberse modificado al intentar cancelar sin una suscripción activa"
+        );
+    }
+
+    #[test]
+    fn test_medio_pago_activo_mas_utilizado() {
+        let mut streaming = StreamingRust::new();
+        streaming.agregar_usuario(usuario_clasic()); // MercadoPago
+        streaming.agregar_usuario(usuario_clasic()); // MercadoPago
+        streaming.agregar_usuario(usuario_super()); // Tarjeta
+
+        let resultado = streaming.medio_pago_activo_mas_utilizado();
+        assert_eq!(
+            resultado,
+            Some(MedioPagoTipo::MercadoPago(billetera_info())),
+            "MercadoPago debería ser el medio de pago activo más utilizado"
+        );
+    }
+
+    #[test]
+    fn test_subscripcion_activa_mas_utilizada() {
+        let mut streaming = StreamingRust::new();
+        streaming.agregar_usuario(usuario_basic()); // Basic
+        streaming.agregar_usuario(usuario_basic()); // Basic
+        streaming.agregar_usuario(usuario_super()); // Super
+
+        let resultado = streaming.subscripcion_activo_mas_utilizado();
+        assert_eq!(
+            resultado,
+            Some(SubscripcionTipo::Basic),
+            "Basic debería ser la suscripción activa más utilizada"
+        );
+    }
+
+    #[test]
+    fn test_medio_pago_mas_utilizado_en_historial() {
+        let mut user = usuario_clasic(); // MercadoPago
+        user.cancelar(); // Agrega al historial
+        user.cancelar(); // No cambia nada
+        let mut streaming = StreamingRust::new();
+        streaming.agregar_usuario(user);
+
+        let resultado = streaming.medio_pago_mas_utilizado();
+        assert_eq!(
+            resultado,
+            Some(MedioPagoTipo::MercadoPago(billetera_info())),
+            "MercadoPago debería ser el medio de pago más usado en el historial"
+        );
+    }
+
+    #[test]
+    fn test_subscripcion_mas_contratada_en_historial() {
+        let mut user = usuario_super(); // Super
+        user.downgrade(fecha_dummy()); // Super → Clasic
+        user.downgrade(fecha_dummy()); // Clasic → Basic
+        user.cancelar(); // Basic al historial
+
+        let mut streaming = StreamingRust::new();
+        streaming.agregar_usuario(user);
+
+        let resultado = streaming.subscripcion_mas_contratada();
+        assert_eq!(
+            resultado,
+            Some(SubscripcionTipo::Super),
+            "Super debería ser la suscripción más contratada en historial, ya que fue la inicial"
+        );
+    }
+}
