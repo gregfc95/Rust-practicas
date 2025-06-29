@@ -28,13 +28,114 @@ activas.
 use super::Fecha;
 use std::collections::HashMap;
 
+//Enums
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SubscripcionTipo {
     Basic,
     Clasic,
     Super,
 }
+/// Trait para controlar las acciones de suscripción de un usuario.
+//Esto me parece incorrecto. Fecha deberia ser manejado de otra forma, se deberia usar Chrono/naive_date
+trait SubscripcionControl {
+    fn upgrade(&mut self, fecha_actual: Fecha);
+    fn downgrade(&mut self, fecha_actual: Fecha);
+    fn cancelar(&mut self);
+}
 
+/// Representa los medios de pago posibles para una suscripción.
+/// Algunos requieren datos adicionales.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MedioPagoTipo {
+    /// Pago en efectivo, sin datos adicionales.
+    Efectivo,
+    /// Pago con MercadoPago, requiere información del titular.
+    MercadoPago(BilleteraInfo),
+    /// Pago con tarjeta de crédito, requiere información del titular.
+    TarjetaDeCredito(TitularInfo),
+    /// Transferencia bancaria, requiere datos del titular y CBU.
+    TransferenciaBancaria(TransferenciaInfo),
+    /// Pago con criptomonedas, requiere dirección y red.
+    Cripto(CriptoInfo),
+}
+
+//Structs
+/// Información común de métodos de pago con tarjeta o billetera digital.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TitularInfo {
+    /// Nombre del titular del medio de pago.
+    nombre: String,
+    /// Número del medio de pago (tarjeta, cuenta, etc.).
+    numero: String,
+    /// Fecha de vencimiento del medio de pago.
+    fecha_vencimiento: Fecha,
+    /// Código de seguridad (CVV).
+    codigo_seguridad: String,
+}
+
+/// Información para pagos por transferencia bancaria.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TransferenciaInfo {
+    /// Nombre del titular de la cuenta.
+    titular: String,
+    /// Clave Bancaria Uniforme (CBU).
+    cbu: String,
+    ///ID de la transferencia
+    id_transferencia: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BilleteraInfo {
+    /// Nombre del titular de la cuenta.
+    titular: String,
+    /// Clave Virtual Uniforme (CVU).
+    cvu: String,
+    ///ID de la transferencia
+    id_transferencia: String,
+}
+/// Información para pagos con criptomonedas.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CriptoInfo {
+    /// Dirección de la wallet.
+    wallet_address: String,
+    /// Red utilizada para la transacción (por ejemplo, Ethereum).
+    red: String,
+}
+/// Representa una suscripción activa de un usuario.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Subscripcion {
+    /// Tipo de suscripción contratada.
+    tipo: SubscripcionTipo,
+    /// Duración de la suscripción en meses.
+    duracion_meses: u32,
+    /// Fecha de inicio de la suscripción.
+    fecha_inicio: Fecha,
+    /// Costo mensual de la suscripción.
+    costo: f32,
+    /// Medio de pago utilizado.
+    medio_pago: MedioPagoTipo,
+}
+/// Representa un usuario registrado en la plataforma.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Usuario {
+    /// Nombre del usuario.
+    nombre: String,
+    /// Dirección de correo electrónico.
+    email: String,
+    /// Fecha de registro del usuario.
+    fecha_creacion: Fecha,
+    /// Subscripción activa del usuario, si tiene alguna.
+    subscripcion_activa: Option<Subscripcion>,
+    /// Subscripción historico del usuario.
+    historial_suscripciones: Vec<Subscripcion>,
+}
+
+struct StreamingRust {
+    usuarios: Vec<Usuario>,
+}
+// Implementaciones
+
+// Implementaciones de los métodos de SubscripcionTipo
 impl SubscripcionTipo {
     fn costo(&self) -> f32 {
         match self {
@@ -73,35 +174,7 @@ impl SubscripcionTipo {
     }
 }
 
-/// Representa los medios de pago posibles para una suscripción.
-/// Algunos requieren datos adicionales.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum MedioPagoTipo {
-    /// Pago en efectivo, sin datos adicionales.
-    Efectivo,
-    /// Pago con MercadoPago, requiere información del titular.
-    MercadoPago(BilleteraInfo),
-    /// Pago con tarjeta de crédito, requiere información del titular.
-    TarjetaDeCredito(TitularInfo),
-    /// Transferencia bancaria, requiere datos del titular y CBU.
-    TransferenciaBancaria(TransferenciaInfo),
-    /// Pago con criptomonedas, requiere dirección y red.
-    Cripto(CriptoInfo),
-}
-
-/// Información común de métodos de pago con tarjeta o billetera digital.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-
-pub struct TitularInfo {
-    /// Nombre del titular del medio de pago.
-    nombre: String,
-    /// Número del medio de pago (tarjeta, cuenta, etc.).
-    numero: String,
-    /// Fecha de vencimiento del medio de pago.
-    fecha_vencimiento: Fecha,
-    /// Código de seguridad (CVV).
-    codigo_seguridad: String,
-}
+// Implementaciones de los métodos de MedioPagoTipo
 impl TitularInfo {
     pub fn new(
         nombre: String,
@@ -118,18 +191,7 @@ impl TitularInfo {
     }
 }
 
-/// Información para pagos por transferencia bancaria.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-
-pub struct TransferenciaInfo {
-    /// Nombre del titular de la cuenta.
-    titular: String,
-    /// Clave Bancaria Uniforme (CBU).
-    cbu: String,
-    ///ID de la transferencia
-    id_transferencia: String,
-}
-
+/// Implementaciones de los métodos de TransferenciaInfo, BilleteraInfo y CriptoInfo
 impl TransferenciaInfo {
     pub fn new(titular: String, cbu: String, id_transferencia: String) -> Self {
         TransferenciaInfo {
@@ -138,17 +200,6 @@ impl TransferenciaInfo {
             id_transferencia,
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-
-pub struct BilleteraInfo {
-    /// Nombre del titular de la cuenta.
-    titular: String,
-    /// Clave Virtual Uniforme (CVU).
-    cvu: String,
-    ///ID de la transferencia
-    id_transferencia: String,
 }
 
 impl BilleteraInfo {
@@ -161,16 +212,6 @@ impl BilleteraInfo {
     }
 }
 
-/// Información para pagos con criptomonedas.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-
-pub struct CriptoInfo {
-    /// Dirección de la wallet.
-    wallet_address: String,
-    /// Red utilizada para la transacción (por ejemplo, Ethereum).
-    red: String,
-}
-
 impl CriptoInfo {
     pub fn new(wallet_address: String, red: String) -> Self {
         CriptoInfo {
@@ -180,21 +221,7 @@ impl CriptoInfo {
     }
 }
 
-/// Representa una suscripción activa de un usuario.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Subscripcion {
-    /// Tipo de suscripción contratada.
-    tipo: SubscripcionTipo,
-    /// Duración de la suscripción en meses.
-    duracion_meses: u32,
-    /// Fecha de inicio de la suscripción.
-    fecha_inicio: Fecha,
-    /// Costo mensual de la suscripción.
-    costo: f32,
-    /// Medio de pago utilizado.
-    medio_pago: MedioPagoTipo,
-}
-
+// Implementaciones de Subscripcion
 impl Subscripcion {
     /// Crea una nueva instancia de Subscripcion
     fn new(tipo: SubscripcionTipo, medio_pago: MedioPagoTipo, fecha_inicio: Fecha) -> Self {
@@ -209,13 +236,9 @@ impl Subscripcion {
         }
     }
 }
-//Esto me parece incorrecto. Fecha deberia ser manejado de otra forma, se deberia usar Chrono/naive_date
-trait SubscripcionControl {
-    fn upgrade(&mut self, fecha_actual: Fecha);
-    fn downgrade(&mut self, fecha_actual: Fecha);
-    fn cancelar(&mut self);
-}
-
+// Implementaciones de SubscripcionControl para Usuario
+// Este trait permite a los usuarios realizar acciones sobre sus suscripciones.
+// Implementa las acciones de upgrade, downgrade y cancelar suscripción.
 impl SubscripcionControl for Usuario {
     fn upgrade(&mut self, fecha_actual: Fecha) {
         if let Some(ref mut subscripcion) = self.subscripcion_activa {
@@ -246,23 +269,7 @@ impl SubscripcionControl for Usuario {
     }
 }
 
-/// Representa un usuario registrado en la plataforma.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Usuario {
-    /// Nombre del usuario.
-    nombre: String,
-    /// Dirección de correo electrónico.
-    email: String,
-    /// Fecha de registro del usuario.
-    fecha_creacion: Fecha,
-    /// Subscripción activa del usuario, si tiene alguna.
-    subscripcion_activa: Option<Subscripcion>,
-    /// Subscripción historico del usuario.
-    historial_suscripciones: Vec<Subscripcion>,
-}
-/*
-➢ Crear un usuario con una determinada suscripción y medio de pago.
-*/
+// Implementaciones de Usuario
 impl Usuario {
     fn new(
         nombre: String,
@@ -279,16 +286,6 @@ impl Usuario {
         }
     }
 }
-
-struct StreamingRust {
-    usuarios: Vec<Usuario>,
-}
-/*
-➢ Saber el medio de pago que es más utilizado por los usuarios sobre las
-suscripciones activas
-➢ Saber cual es la suscripción más contratada por los usuarios sobre las suscripciones
-activas.
-*/
 
 pub fn mediopago_activo_mas_utilizado(usuarios: Vec<Usuario>) -> Option<MedioPagoTipo> {
     //Aplano para poder contarlas.
