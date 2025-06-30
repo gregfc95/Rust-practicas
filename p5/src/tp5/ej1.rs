@@ -39,7 +39,11 @@ No debe modificar los tests hechos en el punto b. Si puede agregar más en caso 
 haga nueva funcionalidad..
 
 */
-#[derive(Debug, PartialEq, Clone)]
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::fs::File;
+use std::io;
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum Color {
     Rojo,
     Verde,
@@ -48,8 +52,14 @@ pub enum Color {
     Blanco,
     Negro,
 }
+#[derive(Debug, PartialEq)]
+pub enum ConcesionarioError {
+    CapacidadMaxima,
+    AutoNoEncontrado,
+    Archivo(String),
+}
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Auto {
     marca: String,
     modelo: String,
@@ -57,6 +67,7 @@ pub struct Auto {
     precio_bruto: f32,
     color: Color,
 }
+#[derive(Serialize, Deserialize)]
 
 pub struct Concesionario {
     nombre: String,
@@ -83,12 +94,12 @@ impl Concesionario {
         }
     }
 
-    pub fn agregar_auto_con_error(&mut self, auto: Auto) -> Result<bool, String> {
+    pub fn agregar_auto_con_error(&mut self, auto: Auto) -> Result<(), ConcesionarioError> {
         if self.autos.len() < self.capacidad_maxima as usize {
             self.autos.push(auto);
-            Ok(true)
+            Ok(())
         } else {
-            Err("Capacidad maxima alcanzada".to_string())
+            Err(ConcesionarioError::CapacidadMaxima)
         }
     }
 
@@ -101,6 +112,42 @@ impl Concesionario {
                 && a.color == auto.color
         })?;
         Some(self.autos.remove(index))
+    }
+
+    pub fn eliminar_auto_result(&mut self, auto: &Auto) -> Result<Auto, ConcesionarioError> {
+        if self.autos.is_empty() {
+            return Err(ConcesionarioError::AutoNoEncontrado);
+        }
+        let index = self
+            .autos
+            .iter()
+            .position(|a| {
+                a.anio == auto.anio
+                    && a.modelo == auto.modelo
+                    && a.marca == auto.marca
+                    && a.color == auto.color
+            })
+            .ok_or(ConcesionarioError::AutoNoEncontrado)?;
+        Ok(self.autos.remove(index))
+    }
+
+    pub fn eliminar_auto_y_guardar(&mut self, auto: &Auto, path: &str) -> Option<Auto> {
+        let res = self.eliminar_auto(auto);
+        let _ = self.guardar_en_archivo(path);
+        res
+    }
+    pub fn agregar_auto_y_guardar(&mut self, auto: Auto, path: &str) -> bool {
+        let ok = self.agregar_auto(auto);
+        let _ = self.guardar_en_archivo(path);
+        ok
+    }
+
+    pub fn guardar_en_archivo(&self, path: &str) -> Result<(), ConcesionarioError> {
+        serde_json::to_writer_pretty(
+            File::create(path).map_err(|e| ConcesionarioError::Archivo(e.to_string()))?,
+            &self.autos,
+        )
+        .map_err(|e| ConcesionarioError::Archivo(e.to_string()))
     }
 
     pub fn buscar_auto(&self, auto: &Auto) -> Option<&Auto> {
@@ -160,6 +207,9 @@ mod tests {
     use super::*;
     use std::vec;
 
+    fn path_test() -> &'static str {
+        "test_autos.json"
+    }
     fn helper_crear_concesionario() -> Concesionario {
         Concesionario::new("TuAutoExpress".to_string(), "calle".to_string(), 2, vec![])
     }
@@ -199,6 +249,33 @@ mod tests {
         assert_eq!(concesionario.capacidad_maxima, 10);
     }
 
+    #[test]
+    fn test_eliminar_auto_result() {
+        let auto = helper_crear_auto1();
+        let mut concesionario = helper_crear_concesionario();
+        let path = path_test();
+        // Elimina existente
+        concesionario.agregar_auto_y_guardar(auto.clone(), path);
+        let eliminado = concesionario.eliminar_auto_result(&auto).unwrap();
+        assert_eq!(eliminado, auto);
+        // Elimina inexistente
+        let res = concesionario.eliminar_auto_result(&auto);
+        assert_eq!(res, Err(ConcesionarioError::AutoNoEncontrado));
+    }
+    #[test]
+    fn test_guardar_en_archivo() {
+        let auto = helper_crear_auto1();
+        let mut concesionario = helper_crear_concesionario();
+        let path = path_test();
+        concesionario.agregar_auto_y_guardar(auto, path);
+        concesionario.guardar_en_archivo(path).unwrap();
+
+        // Leer el archivo y verificar que contiene el auto
+        let contenido = fs::read_to_string(path).unwrap();
+        assert!(contenido.contains("Toyota"));
+        // Limpieza
+        let _ = fs::remove_file(path);
+    }
     #[test]
     fn test_agregar_auto() {
         let mut concesionario =
@@ -358,8 +435,8 @@ mod tests {
         let mut concesionario = helper_crear_concesionario();
         let auto = helper_crear_auto1();
         let auto2 = helper_crear_auto2();
-        assert_eq!(concesionario.agregar_auto_con_error(auto), Ok(true));
-        assert_eq!(concesionario.agregar_auto_con_error(auto2), Ok(true));
+        assert_eq!(concesionario.agregar_auto_con_error(auto), Ok(()));
+        assert_eq!(concesionario.agregar_auto_con_error(auto2), Ok(()));
         assert_eq!(concesionario.autos.len(), 2);
     }
     #[test]
@@ -368,11 +445,11 @@ mod tests {
         let auto = helper_crear_auto1();
         let auto2 = helper_crear_auto2();
         let auto3 = helper_crear_auto3();
-        assert_eq!(concesionario.agregar_auto_con_error(auto), Ok(true));
-        assert_eq!(concesionario.agregar_auto_con_error(auto2), Ok(true));
+        assert_eq!(concesionario.agregar_auto_con_error(auto), Ok(()));
+        assert_eq!(concesionario.agregar_auto_con_error(auto2), Ok(()));
         assert_eq!(
             concesionario.agregar_auto_con_error(auto3),
-            Err("Capacidad maxima alcanzada".to_string())
+            Err(ConcesionarioError::CapacidadMaxima)
         );
         assert_eq!(concesionario.autos.len(), 2);
     }
