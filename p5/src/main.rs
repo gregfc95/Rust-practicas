@@ -1,4 +1,2 @@
-pub mod ej1;
-fn main() {
-    println!("Hello, world!");
-}
+pub mod tp5;
+fn main() {}
