@@ -35,10 +35,14 @@ punto. Recuerde también que se debe seguir manteniendo un coverage de al menos 
 
 /// Tipos de suscripción disponibles en la plataforma.
 use super::Fecha;
+use serde::de;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
+use std::collections::VecDeque;
+use std::fs::File;
+use std::io::{Read, Write};
 //Enums
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SubscripcionTipo {
     Basic,
     Clasic,
@@ -48,6 +52,15 @@ pub enum SubscripcionTipo {
 enum ErrorSubscripcion {
     UpgradeNoDisponible,
     DowngradeNoDisponible,
+}
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum ResultadoOperacion {
+    /// La operación se realizó con éxito.
+    Exito,
+    /// La operación falló por una razón lógica
+    Fallo(String),
+    /// Ocurrió un error relacionado con archivos (por ejemplo, al guardar/cargar).
+    ErrorArchivo(String),
 }
 /// Trait para controlar las acciones de suscripción de un usuario.
 //Esto me parece incorrecto. Fecha deberia ser manejado de otra forma, se deberia usar Chrono/naive_date
@@ -59,7 +72,7 @@ trait SubscripcionControl {
 
 /// Representa los medios de pago posibles para una suscripción.
 /// Algunos requieren datos adicionales.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub enum MedioPagoTipo {
     /// Pago en efectivo, sin datos adicionales.
     Efectivo,
@@ -75,7 +88,7 @@ pub enum MedioPagoTipo {
 
 //Structs
 /// Información común de métodos de pago con tarjeta o billetera digital.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct TitularInfo {
     /// Nombre del titular del medio de pago.
     nombre: String,
@@ -88,7 +101,7 @@ pub struct TitularInfo {
 }
 
 /// Información para pagos por transferencia bancaria.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct TransferenciaInfo {
     /// Nombre del titular de la cuenta.
     titular: String,
@@ -98,7 +111,7 @@ pub struct TransferenciaInfo {
     id_transferencia: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct BilleteraInfo {
     /// Nombre del titular de la cuenta.
     titular: String,
@@ -108,7 +121,7 @@ pub struct BilleteraInfo {
     id_transferencia: String,
 }
 /// Información para pagos con criptomonedas.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct CriptoInfo {
     /// Dirección de la wallet.
     wallet_address: String,
@@ -116,7 +129,7 @@ pub struct CriptoInfo {
     red: String,
 }
 /// Representa una suscripción activa de un usuario.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Subscripcion {
     /// Tipo de suscripción contratada.
     tipo: SubscripcionTipo,
@@ -130,7 +143,7 @@ pub struct Subscripcion {
     medio_pago: MedioPagoTipo,
 }
 /// Representa un usuario registrado en la plataforma.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Usuario {
     /// Nombre del usuario.
     nombre: String,
@@ -245,7 +258,7 @@ impl Subscripcion {
 }
 // Implementaciones de SubscripcionControl para Usuario
 // Este trait permite a los usuarios realizar acciones sobre sus suscripciones.
-// Implementa las acciones de upgrade, downgrade y cancelar suscripción.
+// Implementa las acciones de upgrade, downgrade e cancelar suscripción.
 impl SubscripcionControl for Usuario {
     fn upgrade(&mut self, fecha_actual: Fecha) -> Result<(), ErrorSubscripcion> {
         if let Some(ref mut subscripcion) = self.subscripcion_activa {
@@ -366,6 +379,103 @@ impl StreamingRust {
             .into_iter()
             .max_by_key(|&(_, cantidad)| cantidad)
             .map(|(medio, _)| medio)
+    }
+    //JSON funciones
+    /// Guarda todos los usuarios y sus suscripciones en un archivo JSON.
+    pub fn guardar_en_archivo(&self, path: &str) -> Result<(), ResultadoOperacion> {
+        let file =
+            File::create(path).map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?;
+        serde_json::to_writer_pretty(file, &self.usuarios)
+            .map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))
+    }
+
+    /// Carga todos los usuarios y sus suscripciones desde un archivo JSON.
+    pub fn cargar_de_archivo(&mut self, path: &str) -> Result<(), ResultadoOperacion> {
+        let mut file =
+            File::open(path).map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?;
+        let mut contenido = String::new();
+        file.read_to_string(&mut contenido)
+            .map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?;
+        let usuarios: Vec<Usuario> = serde_json::from_str(&contenido)
+            .map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?;
+        self.usuarios = usuarios;
+        Ok(())
+    }
+
+    /// Agrega un usuario y guarda automáticamente en archivo.
+    pub fn agregar_usuario_y_guardar(
+        &mut self,
+        usuario: Usuario,
+        path: &str,
+    ) -> Result<ResultadoOperacion, ResultadoOperacion> {
+        self.cargar_de_archivo(path).ok(); // Ignora error si el archivo no existe
+        self.agregar_usuario(usuario);
+        self.guardar_en_archivo(path)?;
+        Ok(ResultadoOperacion::Exito)
+    }
+
+    /// Realiza un upgrade de suscripción para un usuario y guarda en archivo.
+    pub fn upgrade_usuario_y_guardar(
+        &mut self,
+        email: &str,
+        fecha_actual: Fecha,
+        path: &str,
+    ) -> Result<ResultadoOperacion, ResultadoOperacion> {
+        self.cargar_de_archivo(path).ok();
+        if let Some(usuario) = self.usuarios.iter_mut().find(|u| u.email == email) {
+            match usuario.upgrade(fecha_actual) {
+                Ok(_) => {
+                    self.guardar_en_archivo(path)?;
+                    Ok(ResultadoOperacion::Exito)
+                }
+                Err(e) => Err(ResultadoOperacion::Fallo(format!("{:?}", e))),
+            }
+        } else {
+            Err(ResultadoOperacion::Fallo(
+                "Usuario no encontrado".to_string(),
+            ))
+        }
+    }
+
+    /// Realiza un downgrade de suscripción para un usuario y guarda en archivo.
+    pub fn downgrade_usuario_y_guardar(
+        &mut self,
+        email: &str,
+        fecha_actual: Fecha,
+        path: &str,
+    ) -> Result<ResultadoOperacion, ResultadoOperacion> {
+        self.cargar_de_archivo(path).ok();
+        if let Some(usuario) = self.usuarios.iter_mut().find(|u| u.email == email) {
+            match usuario.downgrade(fecha_actual) {
+                Ok(_) => {
+                    self.guardar_en_archivo(path)?;
+                    Ok(ResultadoOperacion::Exito)
+                }
+                Err(e) => Err(ResultadoOperacion::Fallo(format!("{:?}", e))),
+            }
+        } else {
+            Err(ResultadoOperacion::Fallo(
+                "Usuario no encontrado".to_string(),
+            ))
+        }
+    }
+
+    /// Cancela la suscripción de un usuario y guarda en archivo.
+    pub fn cancelar_usuario_y_guardar(
+        &mut self,
+        email: &str,
+        path: &str,
+    ) -> Result<ResultadoOperacion, ResultadoOperacion> {
+        self.cargar_de_archivo(path).ok();
+        if let Some(usuario) = self.usuarios.iter_mut().find(|u| u.email == email) {
+            usuario.cancelar();
+            self.guardar_en_archivo(path)?;
+            Ok(ResultadoOperacion::Exito)
+        } else {
+            Err(ResultadoOperacion::Fallo(
+                "Usuario no encontrado".to_string(),
+            ))
+        }
     }
 }
 
@@ -625,5 +735,259 @@ mod tests {
             Some(SubscripcionTipo::Super),
             "Super debería ser la suscripción más contratada en historial, ya que fue la inicial"
         );
+    }
+
+    #[test]
+    fn test_guardar_en_archivo_exito() {
+        use std::fs;
+        let mut streaming = StreamingRust::new();
+        streaming.agregar_usuario(usuario_basic());
+        streaming.agregar_usuario(usuario_clasic());
+        let path = "test_streaming_guardar.json";
+        let res = streaming.guardar_en_archivo(path);
+        assert!(res.is_ok());
+        let contenido = fs::read_to_string(path).unwrap();
+        assert!(contenido.contains("juan@mail.com"));
+        assert!(contenido.contains("maria@mail.com"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_guardar_en_archivo_error() {
+        let mut streaming = StreamingRust::new();
+        streaming.agregar_usuario(usuario_basic());
+        // Usamos un path inválido para forzar el error
+        let res = streaming.guardar_en_archivo("/no_existe/test_streaming_guardar.json");
+        match res {
+            Err(ResultadoOperacion::ErrorArchivo(_)) => assert!(true),
+            _ => panic!("Se esperaba un error de archivo"),
+        }
+    }
+
+    #[test]
+    fn test_cargar_de_archivo_exito() {
+        use std::fs;
+        let mut streaming = StreamingRust::new();
+        streaming.agregar_usuario(usuario_basic());
+        streaming.agregar_usuario(usuario_clasic());
+        let path = "test_streaming_cargar.json";
+        streaming.guardar_en_archivo(path).unwrap();
+        // Ahora cargamos en una instancia vacía
+        let mut streaming2 = StreamingRust::new();
+        let res = streaming2.cargar_de_archivo(path);
+        assert!(res.is_ok());
+        assert_eq!(streaming2.usuarios.len(), 2);
+        assert!(
+            streaming2
+                .usuarios
+                .iter()
+                .any(|u| u.email == "juan@mail.com")
+        );
+        assert!(
+            streaming2
+                .usuarios
+                .iter()
+                .any(|u| u.email == "maria@mail.com")
+        );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_cargar_de_archivo_error() {
+        let mut streaming = StreamingRust::new();
+        // Usamos un path inválido para forzar el error
+        let res = streaming.cargar_de_archivo("/no_existe/test_streaming_cargar.json");
+        match res {
+            Err(ResultadoOperacion::ErrorArchivo(_)) => assert!(true),
+            _ => panic!("Se esperaba un error de archivo"),
+        }
+    }
+
+    #[test]
+    fn test_agregar_usuario_y_guardar_exito() {
+        use std::fs;
+        let path = "test_streaming_agregar_usuario.json";
+        let mut streaming = StreamingRust::new();
+        let res = streaming.agregar_usuario_y_guardar(usuario_basic(), path);
+        assert!(matches!(res, Ok(ResultadoOperacion::Exito)));
+        // Verifica que el archivo contiene el usuario
+        let contenido = fs::read_to_string(path).unwrap();
+        assert!(contenido.contains("juan@mail.com"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_agregar_usuario_y_guardar_error() {
+        let mut streaming = StreamingRust::new();
+        // Usamos un path inválido para forzar el error
+        let res = streaming.agregar_usuario_y_guardar(
+            usuario_basic(),
+            "/no_existe/test_streaming_agregar_usuario.json",
+        );
+        match res {
+            Err(ResultadoOperacion::ErrorArchivo(_)) => assert!(true),
+            _ => panic!("Se esperaba un error de archivo"),
+        }
+    }
+
+    #[test]
+    fn test_upgrade_usuario_y_guardar_exito() {
+        use std::fs;
+        let path = "test_streaming_upgrade_usuario.json";
+        // Guardamos un usuario Basic
+        {
+            let mut streaming = StreamingRust::new();
+            streaming.agregar_usuario(usuario_basic());
+            streaming.guardar_en_archivo(path).unwrap();
+        }
+        // Ahora hacemos upgrade y guardamos
+        let mut streaming2 = StreamingRust::new();
+        let res = streaming2.upgrade_usuario_y_guardar("juan@mail.com", fecha_dummy(), path);
+        assert!(matches!(res, Ok(ResultadoOperacion::Exito)));
+        // Verifica que el usuario ahora es Clasic
+        let mut streaming3 = StreamingRust::new();
+        streaming3.cargar_de_archivo(path).unwrap();
+        let user = streaming3
+            .usuarios
+            .iter()
+            .find(|u| u.email == "juan@mail.com")
+            .unwrap();
+        assert_eq!(
+            user.subscripcion_activa.as_ref().unwrap().tipo,
+            SubscripcionTipo::Clasic
+        );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_upgrade_usuario_y_guardar_usuario_no_encontrado() {
+        let path = "test_streaming_upgrade_usuario_no_user.json";
+        let mut streaming = StreamingRust::new();
+        streaming.guardar_en_archivo(path).unwrap();
+        let res = streaming.upgrade_usuario_y_guardar("noexiste@mail.com", fecha_dummy(), path);
+        match res {
+            Err(ResultadoOperacion::Fallo(msg)) => assert!(msg.contains("Usuario no encontrado")),
+            _ => panic!("Se esperaba error de usuario no encontrado"),
+        }
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_upgrade_usuario_y_guardar_upgrade_no_disponible() {
+        use std::fs;
+        let path = "test_streaming_upgrade_usuario_no_disponible.json";
+        // Guardamos un usuario Super (no puede hacer upgrade)
+        {
+            let mut streaming = StreamingRust::new();
+            streaming.agregar_usuario(usuario_super());
+            streaming.guardar_en_archivo(path).unwrap();
+        }
+        let mut streaming2 = StreamingRust::new();
+        let res = streaming2.upgrade_usuario_y_guardar("pedro@mail.com", fecha_dummy(), path);
+        match res {
+            Err(ResultadoOperacion::Fallo(msg)) => assert!(msg.contains("UpgradeNoDisponible")),
+            _ => panic!("Se esperaba error UpgradeNoDisponible"),
+        }
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_downgrade_usuario_y_guardar_exito() {
+        use std::fs;
+        let path = "test_streaming_downgrade_usuario.json";
+        // Guardamos un usuario Clasic
+        {
+            let mut streaming = StreamingRust::new();
+            streaming.agregar_usuario(usuario_clasic());
+            streaming.guardar_en_archivo(path).unwrap();
+        }
+        // Ahora hacemos downgrade y guardamos
+        let mut streaming2 = StreamingRust::new();
+        let res = streaming2.downgrade_usuario_y_guardar("maria@mail.com", fecha_dummy(), path);
+        assert!(matches!(res, Ok(ResultadoOperacion::Exito)));
+        // Verifica que el usuario ahora es Basic
+        let mut streaming3 = StreamingRust::new();
+        streaming3.cargar_de_archivo(path).unwrap();
+        let user = streaming3
+            .usuarios
+            .iter()
+            .find(|u| u.email == "maria@mail.com")
+            .unwrap();
+        assert_eq!(
+            user.subscripcion_activa.as_ref().unwrap().tipo,
+            SubscripcionTipo::Basic
+        );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_downgrade_usuario_y_guardar_usuario_no_encontrado() {
+        let path = "test_streaming_downgrade_usuario_no_user.json";
+        let mut streaming = StreamingRust::new();
+        streaming.guardar_en_archivo(path).unwrap();
+        let res = streaming.downgrade_usuario_y_guardar("noexiste@mail.com", fecha_dummy(), path);
+        match res {
+            Err(ResultadoOperacion::Fallo(msg)) => assert!(msg.contains("Usuario no encontrado")),
+            _ => panic!("Se esperaba error de usuario no encontrado"),
+        }
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_downgrade_usuario_y_guardar_downgrade_no_disponible() {
+        use std::fs;
+        let path = "test_streaming_downgrade_usuario_no_disponible.json";
+        // Guardamos un usuario Basic (no puede hacer downgrade)
+        {
+            let mut streaming = StreamingRust::new();
+            streaming.agregar_usuario(usuario_basic());
+            streaming.guardar_en_archivo(path).unwrap();
+        }
+        let mut streaming2 = StreamingRust::new();
+        let res = streaming2.downgrade_usuario_y_guardar("juan@mail.com", fecha_dummy(), path);
+        match res {
+            Err(ResultadoOperacion::Fallo(msg)) => assert!(msg.contains("DowngradeNoDisponible")),
+            _ => panic!("Se esperaba error DowngradeNoDisponible"),
+        }
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_cancelar_usuario_y_guardar_exito() {
+        use std::fs;
+        let path = "test_streaming_cancelar_usuario.json";
+        // Guardamos un usuario Clasic
+        {
+            let mut streaming = StreamingRust::new();
+            streaming.agregar_usuario(usuario_clasic());
+            streaming.guardar_en_archivo(path).unwrap();
+        }
+        // Ahora cancelamos la suscripción y guardamos
+        let mut streaming2 = StreamingRust::new();
+        let res = streaming2.cancelar_usuario_y_guardar("maria@mail.com", path);
+        assert!(matches!(res, Ok(ResultadoOperacion::Exito)));
+        // Verifica que el usuario ahora no tiene suscripción activa
+        let mut streaming3 = StreamingRust::new();
+        streaming3.cargar_de_archivo(path).unwrap();
+        let user = streaming3
+            .usuarios
+            .iter()
+            .find(|u| u.email == "maria@mail.com")
+            .unwrap();
+        assert!(user.subscripcion_activa.is_none());
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_cancelar_usuario_y_guardar_usuario_no_encontrado() {
+        let path = "test_streaming_cancelar_usuario_no_user.json";
+        let mut streaming = StreamingRust::new();
+        streaming.guardar_en_archivo(path).unwrap();
+        let res = streaming.cancelar_usuario_y_guardar("noexiste@mail.com", path);
+        match res {
+            Err(ResultadoOperacion::Fallo(msg)) => assert!(msg.contains("Usuario no encontrado")),
+            _ => panic!("Se esperaba error de usuario no encontrado"),
+        }
+        let _ = std::fs::remove_file(path);
     }
 }

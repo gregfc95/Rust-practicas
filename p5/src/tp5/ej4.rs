@@ -47,17 +47,67 @@ haga métodos nuevos para cumplir con este punto . Recuerde también que se debe
 manteniendo un coverage de al menos 90%.
 */
 use super::Fecha;
-#[derive(Debug, Clone)]
+use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+use std::fs::File;
+use std::io::{Read, Write};
+
+//Enums
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum Genero {
     Novela,
     Infantil,
     Tecnico,
     Otros,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Estado {
     EnPrestamo,
     Devuelto,
+}
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum ResultadoOperacion {
+    /// La operación se realizó con éxito.
+    Exito,
+    /// La operación falló por una razón lógica
+    Fallo(String),
+    /// Ocurrió un error relacionado con archivos (por ejemplo, al guardar/cargar).
+    ErrorArchivo(String),
+}
+//Structs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Prestamo {
+    libro: Libro,
+    cliente: Cliente,
+    fecha_vencimiento: Fecha,
+    fecha_devolucion: Option<Fecha>,
+    estado: Estado,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Libro {
+    isbn: String,
+    titulo: String,
+    autor: String,
+    num_paginas: u32,
+    genero: Genero,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Cliente {
+    nombre: String,
+    telefono: String,
+    email: String,
+}
+#[derive(Serialize, Deserialize, Clone, Debug)]
+
+struct Biblioteca {
+    nombre: String,
+    direccion: String,
+    libros_a_disposicion: Vec<Libros>,
+    prestamos: Vec<Prestamo>,
+}
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct Libros {
+    tupla_libro: (Libro, u32),
 }
 
 impl Estado {
@@ -75,30 +125,6 @@ impl Estado {
     }
 }
 
-struct Bibilioteca {
-    nombre: String,
-    direccion: String,
-    libros_a_disposicion: Vec<Libros>,
-    prestamos: Vec<Prestamo>,
-}
-struct Libros {
-    tupla_libro: (Libro, u32),
-}
-#[derive(Debug, Clone)]
-struct Libro {
-    isbn: String,
-    titulo: String,
-    autor: String,
-    num_paginas: u32,
-    genero: Genero,
-}
-#[derive(Debug, Clone)]
-struct Cliente {
-    nombre: String,
-    telefono: String,
-    email: String,
-}
-
 impl Cliente {
     pub fn new(nombre: String, telefono: String, email: String) -> Self {
         Cliente {
@@ -112,14 +138,7 @@ impl Cliente {
         self.nombre == otro.nombre && self.telefono == otro.telefono && self.email == otro.email
     }
 }
-#[derive(Debug, Clone)]
-struct Prestamo {
-    libro: Libro,
-    cliente: Cliente,
-    fecha_vencimiento: Fecha,
-    fecha_devolucion: Option<Fecha>,
-    estado: Estado,
-}
+
 impl Prestamo {
     pub fn new(
         libro: Libro,
@@ -145,18 +164,30 @@ impl Prestamo {
     }
 }
 
-impl Bibilioteca {
+impl Biblioteca {
     pub fn new(
         nombre: String,
         direccion: String,
         libros_a_disposicion: Vec<Libros>,
         prestamos: Vec<Prestamo>,
     ) -> Self {
-        Bibilioteca {
+        Biblioteca {
             nombre,
             direccion,
             libros_a_disposicion,
             prestamos,
+        }
+    }
+    /// Agrega un libro a disposición. Si ya existe, suma la cantidad.
+    pub fn agregar_libro_a_disposicion(&mut self, libro: Libro, cantidad: u32) {
+        if let Some(l) = self
+            .libros_a_disposicion
+            .iter_mut()
+            .find(|l| l.tupla_libro.0.igual_isbn(&libro))
+        {
+            l.tupla_libro.1 += cantidad;
+        } else {
+            self.libros_a_disposicion.push(Libros::new(libro, cantidad));
         }
     }
 
@@ -266,6 +297,62 @@ impl Bibilioteca {
             0
         }
     }
+    //JSON
+    pub fn guardar_en_archivo(&self, path: &str) -> Result<(), ResultadoOperacion> {
+        let file =
+            File::create(path).map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?;
+        serde_json::to_writer_pretty(file, &self)
+            .map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))
+    }
+    /// Carga el estado completo de la biblioteca (libros y préstamos) desde un archivo JSON.
+    pub fn cargar_de_archivo(&mut self, path: &str) -> Result<(), ResultadoOperacion> {
+        let mut file =
+            File::open(path).map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?;
+        let mut contenido = String::new();
+        file.read_to_string(&mut contenido)
+            .map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?;
+        let biblioteca: Biblioteca = serde_json::from_str(&contenido)
+            .map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?;
+        *self = biblioteca;
+        Ok(())
+    }
+    pub fn realizar_prestamo_y_guardar(
+        &mut self,
+        libro: &Libro,
+        cliente: &Cliente,
+        fecha_vencimiento: Fecha,
+        path: &str,
+    ) -> Result<ResultadoOperacion, ResultadoOperacion> {
+        self.cargar_de_archivo(path).ok(); // Ignora error si el archivo no existe
+        let exito = self.realizar_prestamo(libro, cliente, fecha_vencimiento);
+        self.guardar_en_archivo(path)?;
+        if exito {
+            Ok(ResultadoOperacion::Exito)
+        } else {
+            Err(ResultadoOperacion::Fallo(
+                "No se pudo realizar el préstamo".to_string(),
+            ))
+        }
+    }
+    /// Ejemplo: devolver libro y guardar automáticamente
+    pub fn devolver_libro_y_guardar(
+        &mut self,
+        libro: &Libro,
+        cliente: &Cliente,
+        fecha_devolucion: Fecha,
+        path: &str,
+    ) -> Result<ResultadoOperacion, ResultadoOperacion> {
+        self.cargar_de_archivo(path).ok();
+        let exito = self.devolver_libro(libro, cliente, fecha_devolucion);
+        self.guardar_en_archivo(path)?;
+        if exito {
+            Ok(ResultadoOperacion::Exito)
+        } else {
+            Err(ResultadoOperacion::Fallo(
+                "No se pudo devolver el libro".to_string(),
+            ))
+        }
+    }
 }
 
 impl Libro {
@@ -305,10 +392,38 @@ impl Libros {
         }
     }
 }
-
+//Tests
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_fecha() -> Fecha {
+        Fecha::new(20, 5, 2025).expect("Fecha inválida")
+    }
+    fn test_libro() -> Libro {
+        Libro::new(
+            "123".to_string(),
+            "Rust Book".to_string(),
+            "Ferris".to_string(),
+            300,
+            Genero::Tecnico,
+        )
+    }
+    fn test_cliente() -> Cliente {
+        Cliente::new(
+            "José".to_string(),
+            "123456789".to_string(),
+            "jose@correo.com".to_string(),
+        )
+    }
+    fn test_biblioteca() -> Biblioteca {
+        Biblioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            vec![],
+            vec![],
+        )
+    }
 
     #[test]
     fn test_obtener_cantidad_de_copias() {
@@ -321,7 +436,7 @@ mod tests {
         );
 
         let libros = vec![Libros::new(libro.clone(), 3)];
-        let biblioteca = Bibilioteca::new(
+        let biblioteca = Biblioteca::new(
             "Mi Biblio".to_string(),
             "Calle 3".to_string(),
             libros,
@@ -342,7 +457,7 @@ mod tests {
             Genero::Tecnico,
         );
         let libros = vec![Libros::new(libro.clone(), 3)];
-        let mut biblioteca = Bibilioteca::new(
+        let mut biblioteca = Biblioteca::new(
             "Mi Biblio".to_string(),
             "Calle 3".to_string(),
             libros,
@@ -364,7 +479,7 @@ mod tests {
             Genero::Tecnico,
         );
         let libros = vec![Libros::new(libro.clone(), 3)];
-        let mut biblioteca = Bibilioteca::new(
+        let mut biblioteca = Biblioteca::new(
             "Mi Biblio".to_string(),
             "Calle 3".to_string(),
             libros,
@@ -392,7 +507,7 @@ mod tests {
         );
         let fecha = Fecha::new(20, 5, 2025).expect("Fecha inválida");
         let libros = vec![Libros::new(libro.clone(), 3)];
-        let mut biblioteca = Bibilioteca::new(
+        let mut biblioteca = Biblioteca::new(
             "Mi Biblio".to_string(),
             "Calle 3".to_string(),
             libros,
@@ -419,7 +534,7 @@ mod tests {
         );
         let fecha = Fecha::new(20, 5, 2025).expect("Fecha inválida");
         let libros = vec![Libros::new(libro.clone(), 3)];
-        let mut biblioteca = Bibilioteca::new(
+        let mut biblioteca = Biblioteca::new(
             "Mi Biblio".to_string(),
             "Calle 3".to_string(),
             libros,
@@ -446,7 +561,7 @@ mod tests {
         );
         let fecha = Fecha::new(20, 5, 2025).expect("Fecha inválida");
         let libros = vec![Libros::new(libro.clone(), 3)];
-        let mut biblioteca = Bibilioteca::new(
+        let mut biblioteca = Biblioteca::new(
             "Mi Biblio".to_string(),
             "Calle 3".to_string(),
             libros,
@@ -475,7 +590,7 @@ mod tests {
         );
         let fecha = Fecha::new(20, 5, 2025).expect("Fecha inválida");
         let libros = vec![Libros::new(libro.clone(), 3)];
-        let mut biblioteca = Bibilioteca::new(
+        let mut biblioteca = Biblioteca::new(
             "Mi Biblio".to_string(),
             "Calle 3".to_string(),
             libros,
@@ -502,7 +617,7 @@ mod tests {
             "jose@mail.com".to_string(),
         );
         let libros = vec![Libros::new(libro.clone(), 3)];
-        let mut biblioteca = Bibilioteca::new(
+        let mut biblioteca = Biblioteca::new(
             "Mi Biblio".to_string(),
             "Calle 3".to_string(),
             libros,
@@ -533,7 +648,7 @@ mod tests {
         );
         let fecha = Fecha::new(20, 5, 2025).expect("Fecha inválida");
         let libros = vec![Libros::new(libro.clone(), 3)];
-        let mut biblioteca = Bibilioteca::new(
+        let mut biblioteca = Biblioteca::new(
             "Mi Biblio".to_string(),
             "Calle 3".to_string(),
             libros,
@@ -610,5 +725,265 @@ mod tests {
         assert_eq!(prestamo.contar_prestado_cliente(&cliente), 0);
         // Cliente distinto
         assert_eq!(prestamo.contar_prestado_cliente(&otro_cliente), 0);
+    }
+
+    #[test]
+    fn test_agregar_libro() {
+        let libro = test_libro();
+        let libros = vec![Libros::new(libro.clone(), 3)];
+        let mut biblioteca = Biblioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            libros,
+            vec![],
+        );
+
+        assert_eq!(biblioteca.libros_a_disposicion.len(), 1);
+        assert_eq!(biblioteca.obtener_cant_copias(&libro), 3);
+    }
+    #[test]
+    fn test_agregar_libro_a_disposicion_nuevo() {
+        let libro = test_libro();
+        let mut biblioteca = test_biblioteca();
+        biblioteca.agregar_libro_a_disposicion(libro.clone(), 4);
+        assert_eq!(biblioteca.libros_a_disposicion.len(), 1);
+        assert_eq!(biblioteca.obtener_cant_copias(&libro), 4);
+    }
+
+    #[test]
+    fn test_agregar_libro_a_disposicion_existente() {
+        let libro = test_libro();
+        let mut biblioteca = test_biblioteca();
+        biblioteca.agregar_libro_a_disposicion(libro.clone(), 2);
+        biblioteca.agregar_libro_a_disposicion(libro.clone(), 3);
+        assert_eq!(biblioteca.libros_a_disposicion.len(), 1);
+        assert_eq!(biblioteca.obtener_cant_copias(&libro), 5);
+    }
+
+    //JSON Tests
+    #[test]
+    fn test_guardar_en_archivo_exito() {
+        use std::fs;
+        let libro = test_libro();
+        let libros = vec![Libros::new(libro.clone(), 2)];
+        let prestamos = vec![];
+        let biblioteca = Biblioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            libros,
+            prestamos,
+        );
+        let path = "test_biblioteca_guardar.json";
+        let res = biblioteca.guardar_en_archivo(path);
+        assert!(res.is_ok());
+        let contenido = fs::read_to_string(path).unwrap();
+        assert!(contenido.contains("Rust Book"));
+        let _ = fs::remove_file(path);
+    }
+    #[test]
+    fn test_guardar_en_archivo_error() {
+        let libro = Libro::new(
+            "123".to_string(),
+            "Rust Book".to_string(),
+            "Ferris".to_string(),
+            300,
+            Genero::Tecnico,
+        );
+        let libros = vec![Libros::new(libro.clone(), 2)];
+        let prestamos = vec![];
+        let biblioteca = Biblioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            libros,
+            prestamos,
+        );
+        // Usamos un path inválido para forzar el error
+        let res = biblioteca.guardar_en_archivo("/no_existe/test_biblioteca_guardar.json");
+        match res {
+            Err(ResultadoOperacion::ErrorArchivo(_)) => assert!(true),
+            _ => panic!("Se esperaba un error de archivo"),
+        }
+    }
+    #[test]
+    fn test_cargar_de_archivo_exito() {
+        use std::fs;
+        let libro = test_libro();
+        let libros = vec![Libros::new(libro.clone(), 2)];
+        let prestamos = vec![];
+        let path = "test_biblioteca_cargar.json";
+        // Guardamos primero el archivo
+        {
+            let biblioteca = Biblioteca::new(
+                "Mi Biblio".to_string(),
+                "Calle 3".to_string(),
+                libros.clone(),
+                prestamos.clone(),
+            );
+            biblioteca.guardar_en_archivo(path).unwrap();
+        }
+        // Ahora cargamos en una biblioteca vacía
+        let mut biblioteca2 =
+            Biblioteca::new("Otra".to_string(), "Otra calle".to_string(), vec![], vec![]);
+        let res = biblioteca2.cargar_de_archivo(path);
+        assert!(res.is_ok());
+        assert_eq!(biblioteca2.libros_a_disposicion.len(), 1);
+        assert_eq!(biblioteca2.obtener_cant_copias(&libro), 2);
+        let _ = fs::remove_file(path);
+    }
+    #[test]
+    fn test_realizar_prestamo_y_guardar_exito() {
+        use std::fs;
+        let libro = test_libro();
+        let cliente = test_cliente();
+        let libros = vec![Libros::new(libro.clone(), 2)];
+        let prestamos = vec![];
+        let path = "test_prestamo_guardar.json";
+        // Creamos y guardamos la biblioteca con libros disponibles
+        {
+            let biblioteca = Biblioteca::new(
+                "Mi Biblio".to_string(),
+                "Calle 3".to_string(),
+                libros.clone(),
+                prestamos.clone(),
+            );
+            biblioteca.guardar_en_archivo(path).unwrap();
+        }
+        // Ahora intentamos realizar el préstamo y guardar
+        let fecha = test_fecha();
+        let mut biblioteca2 = Biblioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            vec![],
+            vec![],
+        );
+        let res = biblioteca2.realizar_prestamo_y_guardar(&libro, &cliente, fecha, path);
+        match res {
+            Ok(ResultadoOperacion::Exito) => assert!(true),
+            _ => panic!("Se esperaba éxito en el préstamo"),
+        }
+        let contenido = fs::read_to_string(path).unwrap();
+        assert!(contenido.contains("Rust Book"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_realizar_prestamo_y_guardar_fallo() {
+        use std::fs;
+        let libro = test_libro();
+        let cliente = test_cliente();
+        let libros = vec![]; // No hay copias disponibles
+        let prestamos = vec![];
+        let path = "test_prestamo_guardar_fallo.json";
+        {
+            let biblioteca = Biblioteca::new(
+                "Mi Biblio".to_string(),
+                "Calle 3".to_string(),
+                libros.clone(),
+                prestamos.clone(),
+            );
+            biblioteca.guardar_en_archivo(path).unwrap();
+        }
+        let fecha = test_fecha();
+        let mut biblioteca2 = Biblioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            vec![],
+            vec![],
+        );
+        let res = biblioteca2.realizar_prestamo_y_guardar(&libro, &cliente, fecha, path);
+        match res {
+            Err(ResultadoOperacion::Fallo(msg)) => {
+                assert!(msg.contains("No se pudo realizar el préstamo"))
+            }
+            _ => panic!("Se esperaba error de préstamo"),
+        }
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_cargar_de_archivo_error() {
+        let mut biblioteca = Biblioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            vec![],
+            vec![],
+        );
+        // Usamos un path inválido para forzar el error
+        let res = biblioteca.cargar_de_archivo("/no_existe/test_biblioteca_cargar.json");
+        match res {
+            Err(ResultadoOperacion::ErrorArchivo(_)) => assert!(true),
+            _ => panic!("Se esperaba un error de archivo"),
+        }
+    }
+    #[test]
+    fn test_devolver_libro_y_guardar_exito() {
+        use std::fs;
+        let libro = test_libro();
+        let cliente = test_cliente();
+        let fecha = test_fecha();
+        let libros = vec![Libros::new(libro.clone(), 1)];
+        let prestamos = vec![];
+        let path = "test_devolver_libro_guardar_ok.json";
+        // Creamos y guardamos la biblioteca con un préstamo en curso
+        {
+            let mut biblioteca = Biblioteca::new(
+                "Mi Biblio".to_string(),
+                "Calle 3".to_string(),
+                libros.clone(),
+                prestamos.clone(),
+            );
+            biblioteca.realizar_prestamo(&libro, &cliente, fecha.clone());
+            biblioteca.guardar_en_archivo(path).unwrap();
+        }
+        // Ahora devolvemos el libro y guardamos
+        let fecha_devolucion = test_fecha();
+        let mut biblioteca2 = Biblioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            vec![],
+            vec![],
+        );
+        let res = biblioteca2.devolver_libro_y_guardar(&libro, &cliente, fecha_devolucion, path);
+        match res {
+            Ok(ResultadoOperacion::Exito) => assert!(true),
+            _ => panic!("Se esperaba éxito al devolver el libro"),
+        }
+        let contenido = fs::read_to_string(path).unwrap();
+        assert!(contenido.contains("Devuelto"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_devolver_libro_y_guardar_fallo() {
+        use std::fs;
+        let libro = test_libro();
+        let cliente = test_cliente();
+        let libros = vec![Libros::new(libro.clone(), 1)];
+        let prestamos = vec![]; // No hay préstamo registrado
+        let path = "test_devolver_libro_guardar_fail.json";
+        {
+            let biblioteca = Biblioteca::new(
+                "Mi Biblio".to_string(),
+                "Calle 3".to_string(),
+                libros.clone(),
+                prestamos.clone(),
+            );
+            biblioteca.guardar_en_archivo(path).unwrap();
+        }
+        let fecha_devolucion = test_fecha();
+        let mut biblioteca2 = Biblioteca::new(
+            "Mi Biblio".to_string(),
+            "Calle 3".to_string(),
+            vec![],
+            vec![],
+        );
+        let res = biblioteca2.devolver_libro_y_guardar(&libro, &cliente, fecha_devolucion, path);
+        match res {
+            Err(ResultadoOperacion::Fallo(msg)) => {
+                assert!(msg.contains("No se pudo devolver el libro"))
+            }
+            _ => panic!("Se esperaba error al devolver el libro"),
+        }
+        let _ = fs::remove_file(path);
     }
 }
