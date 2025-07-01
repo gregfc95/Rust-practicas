@@ -34,18 +34,22 @@ pub enum Genero {
     Jazz,
     Otros,
 }
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ResultadoOperacion {
+    /// La operación se realizó con éxito.
     Exito,
+    /// La operación falló por una razón lógica (por ejemplo, canción no encontrada).
     Fallo(String),
-    Archivo(String),
+    /// Ocurrió un error relacionado con archivos (por ejemplo, al guardar/cargar).
+    ErrorArchivo(String),
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Cancion {
     titulo: String,
     artista: String,
     genero: Genero,
 }
+#[derive(Debug, Clone, Serialize, Deserialize)]
 
 pub struct Playlist {
     nombre: String,
@@ -78,12 +82,63 @@ impl Playlist {
         true
     }
 
+    pub fn agregar_cancion_y_guardar(
+        &mut self,
+        cancion: Cancion,
+        path: &str,
+    ) -> Result<(), ResultadoOperacion> {
+        self.agregar_cancion(cancion);
+        self.guardar_en_archivo(path)
+    }
+
     pub fn guardar_en_archivo(&self, path: &str) -> Result<(), ResultadoOperacion> {
         serde_json::to_writer_pretty(
-            File::create(path).map_err(|e| ResultadoOperacion::Archivo(e.to_string()))?,
+            File::create(path).map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?,
             &self.canciones,
         )
-        .map_err(|e| ResultadoOperacion::Archivo(e.to_string()))
+        .map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))
+    }
+
+    pub fn eliminar_cancion_y_guardar(
+        &mut self,
+        cancion: &Cancion,
+        path: &str,
+    ) -> Result<(), ResultadoOperacion> {
+        match self.eliminar_cancion(cancion) {
+            Some(_) => self.guardar_en_archivo(path),
+            None => Err(ResultadoOperacion::Fallo(
+                "Canción no encontrada".to_string(),
+            )),
+        }
+    }
+
+    pub fn eliminar_canciones_y_guardar(&mut self, path: &str) -> Result<(), ResultadoOperacion> {
+        self.eliminar_canciones();
+        self.guardar_en_archivo(path)
+    }
+
+    pub fn mover_cancion_y_guardar(
+        &mut self,
+        cancion: &Cancion,
+        nueva_posicion: usize,
+        path: &str,
+    ) -> Result<(), ResultadoOperacion> {
+        if self.mover_cancion(cancion, nueva_posicion) {
+            self.guardar_en_archivo(path)
+        } else {
+            Err(ResultadoOperacion::Fallo(
+                "No se pudo mover la canción".to_string(),
+            ))
+        }
+    }
+
+    pub fn set_nombre_y_guardar(
+        &mut self,
+        nombre: String,
+        path: &str,
+    ) -> Result<(), ResultadoOperacion> {
+        self.set_nombre(nombre);
+        self.guardar_en_archivo(path)
     }
 
     pub fn eliminar_cancion(&mut self, cancion: &Cancion) -> Option<Cancion> {
@@ -317,5 +372,161 @@ mod tests {
         assert_eq!(playlist.canciones[0].titulo, "A");
         assert_eq!(playlist.canciones[1].titulo, "B");
         assert_eq!(playlist.canciones[2].titulo, "C");
+    }
+
+    #[test]
+    fn test_guardar_en_archivo() {
+        use std::fs;
+
+        let cancion = Cancion::new("Cancion".to_string(), "Artista".to_string(), Genero::Rock);
+        let mut playlist = Playlist::new("Mi playlist".to_string(), vec![]);
+        playlist.agregar_cancion(cancion.clone());
+
+        let path = "test_playlist.json";
+        // Guardar en archivo
+        let res = playlist.guardar_en_archivo(path);
+        assert!(res.is_ok());
+
+        // Leer el archivo y verificar que contiene la canción
+        let contenido = fs::read_to_string(path).unwrap();
+        assert!(contenido.contains("Cancion"));
+        assert!(contenido.contains("Artista"));
+
+        // Limpieza
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_guardar_en_archivo_path_error() {
+        // Intentar guardar en un path inválido
+        let playlist = Playlist::new("Mi playlist".to_string(), vec![]);
+        let res = playlist.guardar_en_archivo("/no_existe/test_playlist.json");
+        assert!(res.is_err());
+    }
+    #[test]
+    fn test_agregar_cancion_y_guardar() {
+        use std::fs;
+        let cancion = Cancion::new("Cancion".to_string(), "Artista".to_string(), Genero::Rock);
+        let mut playlist = Playlist::new("Mi playlist".to_string(), vec![]);
+        let path = "test_playlist_guardar.json";
+        let res = playlist.agregar_cancion_y_guardar(cancion.clone(), path);
+        assert!(res.is_ok());
+        let contenido = fs::read_to_string(path).unwrap();
+        assert!(contenido.contains("Cancion"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_eliminar_cancion_y_guardar() {
+        use std::fs;
+        let cancion = Cancion::new("Cancion".to_string(), "Artista".to_string(), Genero::Rock);
+        let mut playlist = Playlist::new("Mi playlist".to_string(), vec![cancion.clone()]);
+        let path = "test_playlist_eliminar.json";
+        // Guardar primero para crear el archivo
+        playlist.guardar_en_archivo(path).unwrap();
+        let res = playlist.eliminar_cancion_y_guardar(&cancion, path);
+        assert!(res.is_ok());
+        let contenido = fs::read_to_string(path).unwrap();
+        assert!(contenido.contains("[]")); // Debe estar vacío
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_eliminar_canciones_y_guardar() {
+        use std::fs;
+        let c1 = Cancion::new("A".to_string(), "Artista".to_string(), Genero::Rock);
+        let c2 = Cancion::new("B".to_string(), "Artista".to_string(), Genero::Pop);
+        let mut playlist = Playlist::new("Mi playlist".to_string(), vec![c1, c2]);
+        let path = "test_playlist_eliminar_todas.json";
+        playlist.guardar_en_archivo(path).unwrap();
+        let res = playlist.eliminar_canciones_y_guardar(path);
+        assert!(res.is_ok());
+        let contenido = fs::read_to_string(path).unwrap();
+        assert!(contenido.contains("[]"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_mover_cancion_y_guardar() {
+        use std::fs;
+        let a = Cancion::new("A".to_string(), "Artista".to_string(), Genero::Rock);
+        let b = Cancion::new("B".to_string(), "Artista".to_string(), Genero::Pop);
+        let c = Cancion::new("C".to_string(), "Artista".to_string(), Genero::Jazz);
+        let mut playlist = Playlist::new(
+            "Mi playlist".to_string(),
+            vec![a.clone(), b.clone(), c.clone()],
+        );
+        let path = "test_playlist_mover.json";
+        playlist.guardar_en_archivo(path).unwrap();
+        let res = playlist.mover_cancion_y_guardar(&c, 0, path);
+        assert!(res.is_ok());
+        let contenido = fs::read_to_string(path).unwrap();
+        // La primera canción debe ser "C"
+        assert!(contenido.find("\"C\"").unwrap() < contenido.find("\"A\"").unwrap());
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_set_nombre_y_guardar() {
+        use std::fs;
+        let mut playlist = Playlist::new("Viejo nombre".to_string(), vec![]);
+        let path = "test_playlist_nombre.json";
+        playlist.guardar_en_archivo(path).unwrap();
+        let res = playlist.set_nombre_y_guardar("Nuevo nombre".to_string(), path);
+        assert!(res.is_ok());
+        // El nombre no se guarda en el archivo porque solo se serializan canciones,
+        // pero el método debe ejecutarse sin error.
+        let _ = fs::remove_file(path);
+    }
+    #[test]
+    fn test_guardar_en_archivo_error() {
+        // Usamos un path inválido para forzar el error (por ejemplo, un directorio que no existe)
+        let playlist = Playlist::new("Mi playlist".to_string(), vec![]);
+        let res = playlist.guardar_en_archivo("/no_existe/test_playlist.json");
+        match res {
+            Err(ResultadoOperacion::ErrorArchivo(_)) => assert!(true),
+            _ => panic!("Se esperaba un error de archivo"),
+        }
+    }
+    #[test]
+    fn test_eliminar_cancion_y_guardar_no_encontrada() {
+        use std::fs;
+        let cancion = Cancion::new("Cancion".to_string(), "Artista".to_string(), Genero::Rock);
+        let mut playlist = Playlist::new("Mi playlist".to_string(), vec![]);
+        let path = "test_playlist_eliminar_no_encontrada.json";
+        // Guardar primero para crear el archivo
+        playlist.guardar_en_archivo(path).unwrap();
+        let res = playlist.eliminar_cancion_y_guardar(&cancion, path);
+        match res {
+            Err(ResultadoOperacion::Fallo(msg)) => assert!(msg.contains("no encontrada")),
+            _ => panic!("Se esperaba un error de canción no encontrada"),
+        }
+        let _ = fs::remove_file(path);
+    }
+    #[test]
+    fn test_mover_cancion_y_guardar_falla() {
+        use std::fs;
+        let a = Cancion::new("A".to_string(), "Artista".to_string(), Genero::Rock);
+        let b = Cancion::new("B".to_string(), "Artista".to_string(), Genero::Pop);
+        let mut playlist = Playlist::new("Mi playlist".to_string(), vec![a.clone(), b.clone()]);
+        let path = "test_playlist_mover_falla.json";
+        playlist.guardar_en_archivo(path).unwrap();
+
+        // Intentar mover una canción que no existe
+        let c = Cancion::new("C".to_string(), "Artista".to_string(), Genero::Jazz);
+        let res = playlist.mover_cancion_y_guardar(&c, 0, path);
+        match res {
+            Err(ResultadoOperacion::Fallo(msg)) => assert!(msg.contains("No se pudo mover")),
+            _ => panic!("Se esperaba un error de mover canción"),
+        }
+
+        // Intentar mover una canción a una posición inválida
+        let res2 = playlist.mover_cancion_y_guardar(&a, 10, path);
+        match res2 {
+            Err(ResultadoOperacion::Fallo(msg)) => assert!(msg.contains("No se pudo mover")),
+            _ => panic!("Se esperaba un error de mover canción"),
+        }
+
+        let _ = fs::remove_file(path);
     }
 }
