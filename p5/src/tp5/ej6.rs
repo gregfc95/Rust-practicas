@@ -59,8 +59,6 @@ Además la empresa desea saber lo siguiente en base a sus operaciones:
 ➢ Saber cual es la criptomoneda que más volumen de ventas tiene
 ➢ Saber cual es la criptomoneda que más volumen de compras tiene
 
-
-
 6- En base al ejercicio 5 del tp#4 implemente lo siguiente:
 a- Realice todos los tests de la funcionalidad implementada obteniendo un coverage
 de por lo menos 90%
@@ -73,14 +71,23 @@ menos 90%.
 //uses
 use super::Fecha;
 use rand;
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::{Read, Write};
 use std::{cmp::Ordering, collections::HashMap};
 // Enums
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 enum MedioPago {
     MercadoPago,
     TransferenciaBancaria,
 }
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ResultadoOperacion {
+    Exito,
+    Fallo(String),
+    ErrorArchivo(String),
+}
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 enum TipoTransaccion {
     CompraCripto,
     VentaCripto,
@@ -90,7 +97,7 @@ enum TipoTransaccion {
     RetiroFiat,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 enum PlataformaError {
     UsuarioNoEncontrado(u32),
     UsuarioNoValidado(String),
@@ -102,39 +109,39 @@ enum PlataformaError {
 }
 
 //Structs
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 struct Transaccion {
     fecha: Fecha,
     tipo: TipoTransaccion,
     monto: f64,
     usuario_id: u32,
 }
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 struct TransaccionFiat {
     transaccion: Transaccion,
     medio_pago: MedioPago,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 struct TransaccionCripto {
     transaccion: Transaccion,
     criptomoneda: Criptomoneda,
     cotizacion: Option<f64>,
     hash: Option<String>,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, Eq, Hash)]
 struct Blockchain {
     nombre: String,
     prefijo: String,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, Eq, Hash)]
 struct Criptomoneda {
     nombre: String,
     prefijo: String,
     blockchains: Vec<Blockchain>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 struct Usuario {
     id: u32,
     nombre: String,
@@ -143,10 +150,10 @@ struct Usuario {
     dni: String,
     validado: bool,
     balance_fiat: f64,
-    balances_cripto: HashMap<Criptomoneda, f64>,
+    balances_cripto: HashMap<String, f64>, // Cambiado de HashMap<Criptomoneda, f64> a HashMap<String, f64>
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 struct Plataforma {
     usuarios: Vec<Usuario>,
     criptomonedas: Vec<Criptomoneda>,
@@ -291,7 +298,7 @@ impl Usuario {
     }
     fn get_balance_cripto(&self, cripto: &Criptomoneda) -> Result<f64, PlataformaError> {
         self.balances_cripto
-            .get(cripto)
+            .get(&cripto.prefijo)
             .cloned()
             .ok_or_else(|| PlataformaError::CriptoNoEncontrada(cripto.prefijo.clone()))
     }
@@ -415,7 +422,10 @@ impl Plataforma {
 
         Plataforma::monto_insuficiente(monto, usuario.balance_fiat)?;
         let cantidad_crypto = monto / cotizacion;
-        *usuario.balances_cripto.entry(cripto.clone()).or_insert(0.0) += cantidad_crypto;
+        *usuario
+            .balances_cripto
+            .entry(prefijo.clone())
+            .or_insert(0.0) += cantidad_crypto;
         usuario.balance_fiat -= monto;
         let tx = TransaccionCripto::new_compra(cripto, Some(cotizacion), fecha, monto, user_id);
         self.transacciones_cripto.push(tx);
@@ -440,7 +450,10 @@ impl Plataforma {
         let saldo_cripto_actual = usuario.get_balance_cripto(&cripto)?;
 
         Plataforma::monto_insuficiente(monto_cripto, saldo_cripto_actual)?;
-        *usuario.balances_cripto.entry(cripto.clone()).or_insert(0.0) -= monto_cripto;
+        *usuario
+            .balances_cripto
+            .entry(prefijo.clone())
+            .or_insert(0.0) -= monto_cripto;
         usuario.balance_fiat += monto;
 
         let tx = TransaccionCripto::new_venta(cripto, Some(cotizacion), fecha, monto, user_id);
@@ -465,7 +478,10 @@ impl Plataforma {
         let saldo_cripto_actual = usuario.get_balance_cripto(&cripto)?;
         Plataforma::monto_insuficiente(monto, saldo_cripto_actual)?;
 
-        *usuario.balances_cripto.entry(cripto.clone()).or_insert(0.0) -= monto;
+        *usuario
+            .balances_cripto
+            .entry(cripto.prefijo.clone())
+            .or_insert(0.0) -= monto;
         let hash = blockchain.generar_hash();
         let tx = TransaccionCripto::new_retiro(cripto, fecha, monto, user_id, Some(hash.clone()));
         self.transacciones_cripto.push(tx);
@@ -491,7 +507,10 @@ impl Plataforma {
         let usuario = self.obtener_usuario_mut(user_id)?;
 
         // Acreditar el monto al usuario en esa cripto
-        *usuario.balances_cripto.entry(cripto.clone()).or_insert(0.0) += monto;
+        *usuario
+            .balances_cripto
+            .entry(cripto.prefijo.clone())
+            .or_insert(0.0) += monto;
 
         // Crear transacción de recepción
         let tx = TransaccionCripto::new_recepcion(cripto, fecha, monto, user_id);
@@ -547,6 +566,129 @@ impl Plataforma {
             .into_iter()
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal))
             .map(|(cripto, _)| cripto)
+    }
+    //JSON funciones
+    /// Guarda el estado completo de la plataforma (usuarios, balances y transacciones) en un archivo JSON.
+    pub fn guardar_en_archivo(&self, path: &str) -> Result<(), ResultadoOperacion> {
+        let file =
+            File::create(path).map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?;
+        serde_json::to_writer_pretty(file, &self)
+            .map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))
+    }
+
+    /// Carga el estado completo de la plataforma desde un archivo JSON.
+    pub fn cargar_de_archivo(&mut self, path: &str) -> Result<(), ResultadoOperacion> {
+        let mut file =
+            File::open(path).map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?;
+        let mut contenido = String::new();
+        file.read_to_string(&mut contenido)
+            .map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?;
+        let plataforma: Plataforma = serde_json::from_str(&contenido)
+            .map_err(|e| ResultadoOperacion::ErrorArchivo(e.to_string()))?;
+        *self = plataforma;
+        Ok(())
+    }
+    pub fn ingresar_dinero_y_guardar(
+        &mut self,
+        user_id: u32,
+        monto: f64,
+        fecha: Fecha,
+        medio: MedioPago,
+        path: &str,
+    ) -> Result<ResultadoOperacion, ResultadoOperacion> {
+        self.cargar_de_archivo(path).ok(); // Ignora error si el archivo no existe
+        let res = self.ingresar_dinero(user_id, monto, fecha, medio);
+        self.guardar_en_archivo(path)?;
+        match res {
+            Ok(_) => Ok(ResultadoOperacion::Exito),
+            Err(e) => Err(ResultadoOperacion::Fallo(format!("{:?}", e))),
+        }
+    }
+    pub fn retirar_dinero_y_guardar(
+        &mut self,
+        user_id: u32,
+        monto: f64,
+        fecha: Fecha,
+        medio: MedioPago,
+        path: &str,
+    ) -> Result<ResultadoOperacion, ResultadoOperacion> {
+        self.cargar_de_archivo(path).ok();
+        let res = self.retirar_dinero(user_id, monto, fecha, medio);
+        self.guardar_en_archivo(path)?;
+        match res {
+            Ok(_) => Ok(ResultadoOperacion::Exito),
+            Err(e) => Err(ResultadoOperacion::Fallo(format!("{:?}", e))),
+        }
+    }
+
+    pub fn comprar_cripto_y_guardar(
+        &mut self,
+        user_id: u32,
+        monto: f64,
+        fecha: Fecha,
+        cripto: Criptomoneda,
+        path: &str,
+    ) -> Result<ResultadoOperacion, ResultadoOperacion> {
+        self.cargar_de_archivo(path).ok();
+        let res = self.comprar_cripto(user_id, monto, fecha, cripto);
+        self.guardar_en_archivo(path)?;
+        match res {
+            Ok(_) => Ok(ResultadoOperacion::Exito),
+            Err(e) => Err(ResultadoOperacion::Fallo(format!("{:?}", e))),
+        }
+    }
+
+    pub fn vender_cripto_y_guardar(
+        &mut self,
+        user_id: u32,
+        monto: f64,
+        fecha: Fecha,
+        cripto: Criptomoneda,
+        path: &str,
+    ) -> Result<ResultadoOperacion, ResultadoOperacion> {
+        self.cargar_de_archivo(path).ok();
+        let res = self.vender_cripto(user_id, monto, fecha, cripto);
+        self.guardar_en_archivo(path)?;
+        match res {
+            Ok(_) => Ok(ResultadoOperacion::Exito),
+            Err(e) => Err(ResultadoOperacion::Fallo(format!("{:?}", e))),
+        }
+    }
+
+    pub fn retirar_cripto_a_blockchain_y_guardar(
+        &mut self,
+        user_id: u32,
+        monto: f64,
+        blockchain: Blockchain,
+        cripto: Criptomoneda,
+        fecha: Fecha,
+        path: &str,
+    ) -> Result<ResultadoOperacion, ResultadoOperacion> {
+        self.cargar_de_archivo(path).ok();
+        let res = self.retirar_cripto_a_blockchain(user_id, monto, blockchain, cripto, fecha);
+        self.guardar_en_archivo(path)?;
+        match res {
+            Ok(_) => Ok(ResultadoOperacion::Exito),
+            Err(e) => Err(ResultadoOperacion::Fallo(format!("{:?}", e))),
+        }
+    }
+
+    pub fn recibir_cripto_desde_blockchain_y_guardar(
+        &mut self,
+        user_id: u32,
+        monto: f64,
+        blockchain: Blockchain,
+        cripto: Criptomoneda,
+        fecha: Fecha,
+        path: &str,
+    ) -> Result<ResultadoOperacion, ResultadoOperacion> {
+        self.cargar_de_archivo(path).ok();
+        let res = self.recibir_cripto_desde_blockchain(user_id, monto, blockchain, cripto, fecha);
+        self.guardar_en_archivo(path)?;
+        match res {
+            Ok(_) => Ok(ResultadoOperacion::Exito),
+            Err(e) => Err(ResultadoOperacion::Fallo(format!("{:?}", e))),
+        }
     }
 }
 
@@ -730,7 +872,7 @@ mod tests {
     }
 
     #[test]
-    fn test_plataforma_comprar_cripto() {
+    fn test_comprar_cripto() {
         let mut p = plataforma_basica();
         p.agregar_usuario(usuario_validado(1));
         p.ingresar_dinero(1, 10000.0, fecha_dummy(), MedioPago::MercadoPago)
@@ -746,7 +888,7 @@ mod tests {
     }
 
     #[test]
-    fn test_plataforma_vender_cripto() {
+    fn test_vender_cripto() {
         let mut p = plataforma_basica();
         p.agregar_usuario(usuario_validado(1));
         p.ingresar_dinero(1, 10000.0, fecha_dummy(), MedioPago::MercadoPago)
@@ -843,5 +985,433 @@ mod tests {
         // Mayor volumen de compra: BTC (10000), venta: BTC (5000)
         assert_eq!(p.cripto_con_mayor_volumen_compra().unwrap().prefijo, "BTC");
         assert_eq!(p.cripto_con_mayor_volumen_venta().unwrap().prefijo, "BTC");
+    }
+    //JSON test
+    #[test]
+    fn test_guardar_en_archivo_ok() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let path = "test_guardar_en_archivo_ok.json";
+        // Eliminar si existe de antes
+        let _ = std::fs::remove_file(path);
+        let res = p.guardar_en_archivo(path);
+        assert!(res.is_ok());
+        // Verifica que el archivo existe y es JSON válido
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        assert_eq!(plataforma_leida.usuarios.len(), 1);
+        // Limpieza
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_guardar_en_archivo_error() {
+        let p = plataforma_basica();
+        // Path inválido (directorio no existente)
+        let path = "/no_existe/test_guardar_en_archivo_error.json";
+        let res = p.guardar_en_archivo(path);
+        match res {
+            Err(ResultadoOperacion::ErrorArchivo(_)) => (),
+            _ => panic!("Debe devolver ErrorArchivo en path inválido"),
+        }
+    }
+
+    #[test]
+    fn test_cargar_de_archivo_ok() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let path = "test_cargar_de_archivo_ok.json";
+        // Guardar primero
+        p.guardar_en_archivo(path).unwrap();
+        // Cargar en otra plataforma
+        let mut p2 = plataforma_basica(); // Estado inicial diferente
+        let res = p2.cargar_de_archivo(path);
+        assert!(res.is_ok());
+        assert_eq!(p2.usuarios.len(), 1);
+        // Limpieza
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_cargar_de_archivo_error_no_existe() {
+        let mut p = plataforma_basica();
+        let path = "no_existe_este_archivo.json";
+        let res = p.cargar_de_archivo(path);
+        match res {
+            Err(ResultadoOperacion::ErrorArchivo(_)) => (),
+            _ => panic!("Debe devolver ErrorArchivo si el archivo no existe"),
+        }
+    }
+
+    #[test]
+    fn test_cargar_de_archivo_error_json_invalido() {
+        let path = "test_cargar_de_archivo_invalido.json";
+        // Escribir contenido inválido
+        std::fs::write(path, "esto no es json").unwrap();
+        let mut p = plataforma_basica();
+        let res = p.cargar_de_archivo(path);
+        match res {
+            Err(ResultadoOperacion::ErrorArchivo(_)) => (),
+            _ => panic!("Debe devolver ErrorArchivo si el JSON es inválido"),
+        }
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_ingresar_dinero_y_guardar_ok() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let path = "test_ingresar_dinero_y_guardar_ok.json";
+        let _ = std::fs::remove_file(path);
+        let res =
+            p.ingresar_dinero_y_guardar(1, 500.0, fecha_dummy(), MedioPago::MercadoPago, path);
+        assert!(matches!(res, Ok(ResultadoOperacion::Exito)));
+        // Verifica que el archivo fue creado y contiene el usuario con el balance actualizado
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        let usuario = plataforma_leida
+            .usuarios
+            .iter()
+            .find(|u| u.id == 1)
+            .unwrap();
+        assert_eq!(usuario.balance_fiat, 500.0);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_ingresar_dinero_y_guardar_error_usuario_no_existe() {
+        let mut p = plataforma_basica();
+        let path = "test_ingresar_dinero_y_guardar_error.json";
+        let _ = std::fs::remove_file(path);
+        let res =
+            p.ingresar_dinero_y_guardar(99, 500.0, fecha_dummy(), MedioPago::MercadoPago, path);
+        assert!(matches!(res, Err(ResultadoOperacion::Fallo(_))));
+        // El archivo igualmente se crea, pero no hay usuarios
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        assert!(plataforma_leida.usuarios.is_empty());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_ingresar_dinero_y_guardar_error_path_invalido() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let path = "/no_existe/test_ingresar_dinero_y_guardar.json";
+        let res =
+            p.ingresar_dinero_y_guardar(1, 500.0, fecha_dummy(), MedioPago::MercadoPago, path);
+        assert!(matches!(res, Err(ResultadoOperacion::ErrorArchivo(_))));
+    }
+
+    #[test]
+    fn test_retirar_cripto_a_blockchain_y_guardar_ok() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let bc = p.existe_blockchain("BTC").unwrap();
+        // El usuario debe tener cripto, así que primero ingresa dinero y compra
+        p.ingresar_dinero(1, 10000.0, fecha_dummy(), MedioPago::MercadoPago)
+            .unwrap();
+        p.comprar_cripto(1, 10000.0, fecha_dummy(), btc.clone())
+            .unwrap();
+        let path = "test_retirar_cripto_a_blockchain_y_guardar_ok.json";
+        let _ = std::fs::remove_file(path);
+        let res = p.retirar_cripto_a_blockchain_y_guardar(
+            1,
+            0.5,
+            bc.clone(),
+            btc.clone(),
+            fecha_dummy(),
+            path,
+        );
+        assert!(matches!(res, Ok(ResultadoOperacion::Exito)));
+        // Verifica que el archivo fue creado y el balance de cripto bajó
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        let usuario = plataforma_leida
+            .usuarios
+            .iter()
+            .find(|u| u.id == 1)
+            .unwrap();
+        assert!((usuario.get_balance_cripto(&btc).unwrap() - 0.5).abs() < 0.0001);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_retirar_cripto_a_blockchain_y_guardar_error_usuario_no_existe() {
+        let mut p = plataforma_basica();
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let bc = p.existe_blockchain("BTC").unwrap();
+        let path = "test_retirar_cripto_a_blockchain_y_guardar_error.json";
+        let _ = std::fs::remove_file(path);
+        let res = p.retirar_cripto_a_blockchain_y_guardar(
+            99,
+            0.5,
+            bc.clone(),
+            btc.clone(),
+            fecha_dummy(),
+            path,
+        );
+        assert!(matches!(res, Err(ResultadoOperacion::Fallo(_))));
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        assert!(plataforma_leida.usuarios.is_empty());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_retirar_cripto_a_blockchain_y_guardar_error_path_invalido() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let bc = p.existe_blockchain("BTC").unwrap();
+        let path = "/no_existe/test_retirar_cripto_a_blockchain_y_guardar.json";
+        let res = p.retirar_cripto_a_blockchain_y_guardar(
+            1,
+            0.5,
+            bc.clone(),
+            btc.clone(),
+            fecha_dummy(),
+            path,
+        );
+        assert!(matches!(res, Err(ResultadoOperacion::ErrorArchivo(_))));
+    }
+
+    #[test]
+    fn test_recibir_cripto_desde_blockchain_y_guardar_ok() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let bc = p.existe_blockchain("BTC").unwrap();
+        let path = "test_recibir_cripto_desde_blockchain_y_guardar_ok.json";
+        let _ = std::fs::remove_file(path);
+        let res = p.recibir_cripto_desde_blockchain_y_guardar(
+            1,
+            0.25,
+            bc.clone(),
+            btc.clone(),
+            fecha_dummy(),
+            path,
+        );
+        assert!(matches!(res, Ok(ResultadoOperacion::Exito)));
+        // Verifica que el archivo fue creado y el balance de cripto subió
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        let usuario = plataforma_leida
+            .usuarios
+            .iter()
+            .find(|u| u.id == 1)
+            .unwrap();
+        assert!((usuario.get_balance_cripto(&btc).unwrap() - 0.25).abs() < 0.0001);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_recibir_cripto_desde_blockchain_y_guardar_error_usuario_no_existe() {
+        let mut p = plataforma_basica();
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let bc = p.existe_blockchain("BTC").unwrap();
+        let path = "test_recibir_cripto_desde_blockchain_y_guardar_error.json";
+        let _ = std::fs::remove_file(path);
+        let res = p.recibir_cripto_desde_blockchain_y_guardar(
+            99,
+            0.25,
+            bc.clone(),
+            btc.clone(),
+            fecha_dummy(),
+            path,
+        );
+        assert!(matches!(res, Err(ResultadoOperacion::Fallo(_))));
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        assert!(plataforma_leida.usuarios.is_empty());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_recibir_cripto_desde_blockchain_y_guardar_error_path_invalido() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let bc = p.existe_blockchain("BTC").unwrap();
+        let path = "/no_existe/test_recibir_cripto_desde_blockchain_y_guardar.json";
+        let res = p.recibir_cripto_desde_blockchain_y_guardar(
+            1,
+            0.25,
+            bc.clone(),
+            btc.clone(),
+            fecha_dummy(),
+            path,
+        );
+        assert!(matches!(res, Err(ResultadoOperacion::ErrorArchivo(_))));
+    }
+
+    #[test]
+    fn test_retirar_dinero_y_guardar_ok() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let path = "test_retirar_dinero_y_guardar_ok.json";
+        let _ = std::fs::remove_file(path);
+        p.ingresar_dinero(1, 1000.0, fecha_dummy(), MedioPago::MercadoPago)
+            .unwrap();
+        let res = p.retirar_dinero_y_guardar(
+            1,
+            500.0,
+            fecha_dummy(),
+            MedioPago::TransferenciaBancaria,
+            path,
+        );
+        assert!(matches!(res, Ok(ResultadoOperacion::Exito)));
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        let usuario = plataforma_leida
+            .usuarios
+            .iter()
+            .find(|u| u.id == 1)
+            .unwrap();
+        assert_eq!(usuario.balance_fiat, 500.0);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_retirar_dinero_y_guardar_error_usuario_no_existe() {
+        let mut p = plataforma_basica();
+        let path = "test_retirar_dinero_y_guardar_error.json";
+        let _ = std::fs::remove_file(path);
+        let res = p.retirar_dinero_y_guardar(
+            99,
+            500.0,
+            fecha_dummy(),
+            MedioPago::TransferenciaBancaria,
+            path,
+        );
+        assert!(matches!(res, Err(ResultadoOperacion::Fallo(_))));
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        assert!(plataforma_leida.usuarios.is_empty());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_retirar_dinero_y_guardar_error_path_invalido() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let path = "/no_existe/test_retirar_dinero_y_guardar.json";
+        let res = p.retirar_dinero_y_guardar(
+            1,
+            500.0,
+            fecha_dummy(),
+            MedioPago::TransferenciaBancaria,
+            path,
+        );
+        assert!(matches!(res, Err(ResultadoOperacion::ErrorArchivo(_))));
+    }
+
+    #[test]
+    fn test_comprar_cripto_y_guardar_ok() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let path = "test_comprar_cripto_y_guardar_ok.json";
+        let _ = std::fs::remove_file(path);
+        p.ingresar_dinero_y_guardar(1, 10000.0, fecha_dummy(), MedioPago::MercadoPago, path)
+            .unwrap();
+        // Re-inicializa la plataforma y carga el archivo para restaurar cotizaciones y criptos
+        let mut p = plataforma_basica();
+        p.cargar_de_archivo(path).unwrap();
+        // Restaurar cotizaciones y criptos explícitamente después de cargar el archivo
+        p.criptomonedas = vec![cripto_btc(), cripto_eth()];
+        p.blockchains = vec![blockchain_btc(), blockchain_eth()];
+        p.cotizaciones.insert("BTC".to_string(), 10000.0);
+        p.cotizaciones.insert("ETH".to_string(), 2000.0);
+        let res = p.comprar_cripto_y_guardar(1, 5000.0, fecha_dummy(), btc.clone(), path);
+        if let Err(e) = &res {
+            println!("Error en comprar_cripto_y_guardar: {:?}", e);
+        }
+        assert!(matches!(res, Ok(ResultadoOperacion::Exito)));
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        let usuario = plataforma_leida
+            .usuarios
+            .iter()
+            .find(|u| u.id == 1)
+            .unwrap();
+        assert!((usuario.get_balance_cripto(&btc).unwrap() - 0.5).abs() < 0.0001);
+        assert_eq!(usuario.balance_fiat, 5000.0);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_comprar_cripto_y_guardar_error_usuario_no_existe() {
+        let mut p = plataforma_basica();
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let path = "test_comprar_cripto_y_guardar_error.json";
+        let _ = std::fs::remove_file(path);
+        let res = p.comprar_cripto_y_guardar(99, 5000.0, fecha_dummy(), btc.clone(), path);
+        assert!(matches!(res, Err(ResultadoOperacion::Fallo(_))));
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        assert!(plataforma_leida.usuarios.is_empty());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_comprar_cripto_y_guardar_error_path_invalido() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let path = "/no_existe/test_comprar_cripto_y_guardar.json";
+        let res = p.comprar_cripto_y_guardar(1, 5000.0, fecha_dummy(), btc.clone(), path);
+        assert!(matches!(res, Err(ResultadoOperacion::ErrorArchivo(_))));
+    }
+
+    #[test]
+    fn test_vender_cripto_y_guardar_ok() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let path = "test_vender_cripto_y_guardar_ok.json";
+        let _ = std::fs::remove_file(path);
+        p.ingresar_dinero(1, 10000.0, fecha_dummy(), MedioPago::MercadoPago)
+            .unwrap();
+        p.comprar_cripto(1, 10000.0, fecha_dummy(), btc.clone())
+            .unwrap();
+        let res = p.vender_cripto_y_guardar(1, 2000.0, fecha_dummy(), btc.clone(), path);
+        assert!(matches!(res, Ok(ResultadoOperacion::Exito)));
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        let usuario = plataforma_leida
+            .usuarios
+            .iter()
+            .find(|u| u.id == 1)
+            .unwrap();
+        // Vendió 2000/10000 = 0.2 BTC, le quedan 0.8
+        assert!((usuario.get_balance_cripto(&btc).unwrap() - 0.8).abs() < 0.0001);
+        assert!((usuario.balance_fiat - 2000.0).abs() < 0.0001);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_vender_cripto_y_guardar_error_usuario_no_existe() {
+        let mut p = plataforma_basica();
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let path = "test_vender_cripto_y_guardar_error.json";
+        let _ = std::fs::remove_file(path);
+        let res = p.vender_cripto_y_guardar(99, 2000.0, fecha_dummy(), btc.clone(), path);
+        assert!(matches!(res, Err(ResultadoOperacion::Fallo(_))));
+        let contenido = std::fs::read_to_string(path).unwrap();
+        let plataforma_leida: Plataforma = serde_json::from_str(&contenido).unwrap();
+        assert!(plataforma_leida.usuarios.is_empty());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_vender_cripto_y_guardar_error_path_invalido() {
+        let mut p = plataforma_basica();
+        p.agregar_usuario(usuario_validado(1));
+        let btc = p.get_criptomoneda("BTC").unwrap();
+        let path = "/no_existe/test_vender_cripto_y_guardar.json";
+        let res = p.vender_cripto_y_guardar(1, 2000.0, fecha_dummy(), btc.clone(), path);
+        assert!(matches!(res, Err(ResultadoOperacion::ErrorArchivo(_))));
     }
 }
