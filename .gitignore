@@ -3,7 +3,6 @@
 /node_modules/
 .vscode/launch.json
 .vscode/settings.json
-p4/tarpaulin-report.html
-p4/Cargo.lock
-p5/Cargo.lock
-p5/Cargo.lock
+/p4/tarpaulin-report.html
+/p4/Cargo.lock
+/p5/Cargo.lock
