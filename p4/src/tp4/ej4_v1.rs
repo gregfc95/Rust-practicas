@@ -413,8 +413,9 @@ struct SistemaEntregable {
     ventas: Vec<Venta>,
     reportes: Vec<Reporte>,
     //Dado un vendedor, va a tener asociado un informe de ventas por categoria, es decir vendedor A dada una categoria va a volver un informe por venta
-    informes: Vec<Informe>, //Esto deberia ser un HashMap con el legajo del vendedor -> lista de informes, pero el profesor necesita order por fecha y Hashmap no permite orden
+    informes: Vec<Informe>, //Esto deberia ser un HashMap con el legajo del vendedor -> lista de informes, pero el profesor necesita ordenar por fecha y Hashmap no permite orden
 }
+///Enum Errores del Sistema
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ErrorSistema {
     VendedorNoEncontrado,
@@ -437,7 +438,7 @@ impl Informe {
         }
     }
 }
-//Implementacion de sistema entregable con los metodos copiados de SistemaVenta
+//Implementacion de sistema entregable con los metodos copiados de SistemaVenta, debo modificar a Result?
 impl SistemaEntregable {
     fn new() -> Self {
         SistemaEntregable {
@@ -603,9 +604,6 @@ impl SistemaEntregable {
 //Tests
 #[cfg(test)]
 mod tests {
-    use core::error;
-
-    use crate::tp4::fecha;
 
     use super::CategoriaProducto::*;
     use super::MedioPagoTipo::*;
