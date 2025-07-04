@@ -651,6 +651,19 @@ mod tests {
         assert_eq!(info.cbu, "CBU123");
         assert_eq!(info.id_transferencia, "ID1");
     }
+    #[test]
+    fn test_titular_new_tarjeta() {
+        let info = TitularInfo::new(
+            "Titular".to_string(),
+            "1234".to_string(),
+            fecha_dummy(),
+            "999".to_string(),
+        );
+        assert_eq!(info.nombre, "Titular");
+        assert_eq!(info.numero, "1234");
+        assert!(info.fecha_vencimiento.es_fecha_valida());
+        assert_eq!(info.codigo_seguridad, "999");
+    }
 
     #[test]
     fn registrar_vendedor_exitoso() {
@@ -731,6 +744,7 @@ mod tests {
         assert!(!vendedores.iter().any(|v| v.vendedor == 3));
     }
 
+    #[test]
     fn test_descuento_categoria() {
         assert_eq!(Tecnologia.obtener_descuento(), 0.0);
         assert_eq!(Alimentos.obtener_descuento(), 0.02);
@@ -785,51 +799,17 @@ mod tests {
         let esperado = 200.0 * 0.99 * 0.8;
         assert!((v.calcular_precio_final() - esperado).abs() < 0.01);
     }
-    /*
     #[test]
-    fn test_reporte_ventas_por_categoria() {
-
-        let reporte = Reporte
-
-        let cat = rep.ventas_por_categoria();
-        assert!((cat[&Ropa] - 198.0).abs() < 0.01);
-        assert!((cat[&Hogar] - 291.0).abs() < 0.01);
+    fn test_new_informe() {
+        let fecha = fecha_dummy();
+        let productos = vec![prod_vendido("Remera", Ropa, 100.0, 2)];
+        let monto_total = 198.0; // 100 * 2 * 0.99
+        let medio_pago = Efectivo;
+        let informe = Informe::new(fecha.clone(), productos, monto_total, medio_pago.clone());
+        assert_eq!(informe.fecha, fecha);
+        assert_eq!(informe.monto_total, monto_total);
+        assert_eq!(informe.medio_pago, medio_pago);
     }
-
-    #[test]
-    fn test_reporte_ventas_por_vendedor() {
-        let v1 = Venta::new(
-            fecha_dummy(),
-            cliente(false),
-            vendedor(1),
-            Efectivo,
-            vec![prod_vendido("Remera", Ropa, 100.0, 2)],
-        );
-        let v2 = Venta::new(
-            fecha_dummy(),
-            cliente(true),
-            vendedor(1),
-            Efectivo,
-            vec![prod_vendido("Silla", Hogar, 300.0, 1)],
-        );
-        let v3 = Venta::new(
-            fecha_dummy(),
-            cliente(false),
-            vendedor(2),
-            Efectivo,
-            vec![prod_vendido("Pan", Alimentos, 50.0, 2)],
-        );
-        let rep = Reporte {
-            ventas: vec![v1, v2, v3],
-        };
-        let vend = rep.ventas_por_vendedor();
-        // vendedor 1 hizo dos ventas
-        assert!(vend.contains_key(&1));
-        assert!(vend.contains_key(&2));
-        // vendedor 1 total: (100*2*0.99) + (300*0.97*0.8)
-        let esperado = 198.0 + 232.8;
-        assert!((vend[&1] - esperado).abs() < 0.01);
-    } */
 
     fn test_fecha_dummy(d: u32, m: u32, a: i32) -> Fecha {
         Fecha::new(d, m, a).expect("Fecha inválida en test_fecha_dummy")
