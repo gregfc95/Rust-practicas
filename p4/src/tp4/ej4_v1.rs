@@ -1,0 +1,918 @@
+/*
+4 -Se requiere implementar un sistema de ventas de productos. De cada producto se
+conoce el nombre, una categoría y un precio base, y algunos productos pueden tener
+descuentos aplicables dependiendo de la categoría. Además, se debe registrar al vendedor
+que realizó la venta y al cliente. De ellos se conoce nombre, apellido, dirección, dni y del
+vendedor nro de legajo, antigüedad y salario. Los clientes pueden tener un beneficio de
+descuento si tienen suscripción al newsletter, de ser así se tiene el correo electrónico del
+mismo.
+
+El sistema debe permitir registrar las ventas realizadas y asociar el medio de pago utilizado.
+Los medios de pago aceptados son: tarjeta de crédito, tarjeta de débito, transferencia
+bancaria y efectivo.
+Implemente las estructuras, funciones asociadas y traits necesarios para resolver las
+siguientes acciones:
+➢ Crear una venta con: fecha, cliente, vendedor, medio de pago y un listado de
+productos.
+➢ Calcular el precio final de una venta en base a los productos que hay en ella. Para
+calcularlo tenga en cuenta que pueden haber determinados productos de alguna
+categoría donde debería aplicarse un descuento. Tanto la categoría como el
+porcentaje de descuento a aplicar son datos que le brinda el sistema. Es decir el
+sistema tiene una lista de las categorías con el descuento a aplicar. Además se debe
+aplicar un porcentaje de descuento general si el cliente tiene suscripción al
+newsletter.
+➢ Para llevar un control de las ventas realizadas, se debe implementar un reporte que
+permita visualizar las ventas totales por categoría de producto y otro por vendedor.
+
+TP4 Ej4
+
+🧾 Implementar una funcionalidad que permita obtener un informe de ventas realizadas por un vendedor específico, filtrando solo aquellas ventas que contengan al menos un producto de una categoría dada.
+
+Este informe debe incluir, ordenado cronológicamente de la venta más reciente a la más antigua, lo siguiente para cada venta:
+
+-Fecha de la venta
+-Productos vendidos y sus cantidades
+-Monto total final de la venta
+-Medio de pago utilizado
+
+La consulta se debe realizar a partir de un identificador único del vendedor (por ejemplo, su número de legajo, según cómo lo hayan modelado), y una categoría de producto como filtro.
+
+debe retonar una lista de venta con que haya uno de dicha categoria, se retorna esa venta
+manejar si el vendedor existe
+
+En caso de que el vendedor no tenga ventas que cumplan esa condición, el sistema debe reflejar esa situación de forma adecuada.
+
+🔧 Esta funcionalidad debe implementarse como un método dentro del struct principal del sistema.
+
+🧪 Además, deben incluir los tests necesarios para verificar el correcto funcionamiento de esta funcionalidad.
+
+📌 Firma esperada del método:
+get_historial_ventas(id: id_vendedor, categoria: CategoriaProducto) -> ???
+*/
+//Jose Fernandez legajo 19639/4
+
+use std::{collections::HashMap, hash::Hash};
+
+//Fecha
+
+use chrono::prelude::*;
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Fecha {
+    dia: u32,
+    mes: u32,
+    anio: i32,
+}
+
+impl Fecha {
+    pub fn new(dia: u32, mes: u32, anio: i32) -> Option<Fecha> {
+        if NaiveDate::from_ymd_opt(anio, mes, dia).is_some() {
+            Some(Fecha { dia, mes, anio })
+        } else {
+            None
+        }
+    }
+
+    pub fn new_fecha_actual() -> Fecha {
+        let hoy = chrono::Local::now().naive_local();
+        Fecha::new(hoy.day(), hoy.month(), hoy.year()).unwrap()
+    }
+    pub fn es_fecha_valida(&self) -> bool {
+        let okay: bool = NaiveDate::from_ymd_opt(self.anio, self.mes, self.dia).is_some();
+        okay
+    }
+
+    pub fn es_bisiesto(&self) -> bool {
+        NaiveDate::from_ymd_opt(self.anio, self.mes, self.dia)
+            .unwrap()
+            .leap_year()
+    }
+
+    pub fn sumar_dias(&self, dias: u32) -> Option<Fecha> {
+        NaiveDate::from_ymd_opt(self.anio, self.mes, self.dia)?
+            .checked_add_days(chrono::Days::new(dias.into()))
+            .map(|d| Fecha {
+                anio: d.year(),
+                mes: d.month(),
+                dia: d.day(),
+            })
+    }
+
+    pub fn restar_dias(&self, dias: u32) -> Option<Fecha> {
+        NaiveDate::from_ymd_opt(self.anio, self.mes, self.dia)?
+            .checked_sub_days(chrono::Days::new(dias.into()))
+            .map(|d| Fecha {
+                anio: d.year(),
+                mes: d.month(),
+                dia: d.day(),
+            })
+    }
+
+    pub fn es_mayor(&self, otra_fecha: &Self) -> bool {
+        NaiveDate::from_ymd_opt(self.anio, self.mes, self.dia)
+            > NaiveDate::from_ymd_opt(otra_fecha.anio, otra_fecha.mes, otra_fecha.dia)
+    }
+    pub fn igual(&self, otra: &Fecha) -> bool {
+        self.dia == otra.dia && self.mes == otra.mes && self.anio == otra.anio
+    }
+}
+
+//Ejercicio 4 INICIO
+//Enums
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MedioPagoTipo {
+    /// Pago en efectivo, sin datos adicionales.
+    Efectivo,
+    /// Pago con tarjeta de crédito, requiere información del titular.
+    TarjetaDeCredito(TitularInfo),
+    /// Pago con tarjeta de debito, requiere información del titular.
+    TarjetaDeDebito(TitularInfo),
+    /// Transferencia bancaria, requiere datos del titular y CBU.
+    TransferenciaBancaria(TransferenciaInfo),
+}
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum CategoriaProducto {
+    Tecnologia,
+    Alimentos,
+    Ropa,
+    Hogar,
+    Otros,
+}
+
+//Traits
+trait Descuento {
+    fn obtener_descuento(&self) -> f64;
+}
+trait DescuentoCliente {
+    fn descuento_newsletter(&self) -> f64;
+}
+//Structs
+
+#[derive(Debug, Clone, PartialEq)]
+struct Reporte {
+    /// Lista de ventas asociadas a este reporte.
+    por_categoria: Vec<ReporteCategoria>,
+    por_vendedor: Vec<ReporteVendedor>,
+}
+#[derive(Debug, Clone, PartialEq)]
+struct ReporteCategoria {
+    categoria: CategoriaProducto,
+    total_ventas: u32,
+}
+#[derive(Debug, Clone, PartialEq)]
+struct ReporteVendedor {
+    vendedor: u32,
+    total_ventas: u32,
+}
+#[derive(Debug, Clone, PartialEq)]
+
+struct Venta {
+    fecha: Fecha,
+    cliente: Cliente,
+    vendedor: Vendedor,
+    medio_pago: MedioPagoTipo,
+    productos: Vec<ProductoVendido>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+
+pub struct TitularInfo {
+    /// Nombre del titular del medio de pago.
+    nombre: String,
+    /// Número del medio de pago (tarjeta, cuenta, etc.).
+    numero: String,
+    /// Fecha de vencimiento del medio de pago.
+    fecha_vencimiento: Fecha,
+    /// Código de seguridad (CVV).
+    codigo_seguridad: String,
+}
+#[derive(Debug, Clone, PartialEq)]
+
+struct Producto {
+    nombre: String,
+    categoria: CategoriaProducto,
+    precio_base: f64,
+}
+#[derive(Debug, Clone, PartialEq)]
+
+struct ProductoVendido {
+    producto: Producto,
+    cantidad: u32,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+
+struct Persona {
+    nombre: String,
+    apellido: String,
+    direccion: String,
+    dni: String,
+}
+#[derive(Debug, Clone, PartialEq)]
+struct Vendedor {
+    persona: Persona,
+    legajo: u32,
+    salario: f64,
+    antiguedad: u32,
+}
+#[derive(Debug, Clone, PartialEq)]
+
+struct Cliente {
+    persona: Persona,
+    newsletter: bool,
+    correo: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TransferenciaInfo {
+    /// Nombre del titular de la cuenta.
+    titular: String,
+    /// Clave Bancaria Uniforme (CBU).
+    cbu: String,
+    ///ID de la transferencia
+    id_transferencia: String,
+}
+#[derive(Debug, Clone, PartialEq)]
+struct SistemaVenta {
+    vendedores: Vec<Vendedor>,
+    clientes: HashMap<String, Cliente>,
+    ventas: Vec<Venta>,
+    reportes: Vec<Reporte>,
+}
+impl SistemaVenta {
+    fn new() -> Self {
+        SistemaVenta {
+            vendedores: vec![],
+            clientes: HashMap::new(),
+            ventas: vec![],
+            reportes: vec![],
+        }
+    }
+    fn registrar_vendedor(&mut self, vendedor: Vendedor) {
+        self.vendedores.push(vendedor);
+    }
+    fn registrar_cliente(&mut self, cliente: Cliente) {
+        self.clientes.insert(cliente.persona.dni.clone(), cliente);
+    }
+    fn registrar_venta(&mut self, venta: Venta) {
+        self.ventas.push(venta);
+    }
+    fn generar_reporte(&mut self) {
+        let reporte = Reporte {
+            por_categoria: self.ventas_por_categoria(),
+            por_vendedor: self.ventas_por_vendedor(),
+        };
+        self.reportes.push(reporte);
+    }
+    fn ventas_por_categoria(&self) -> Vec<ReporteCategoria> {
+        let mut mapa: HashMap<CategoriaProducto, u32> = HashMap::new();
+
+        for venta in &self.ventas {
+            for producto in &venta.productos {
+                let cat = &producto.producto.categoria;
+                *mapa.entry(cat.clone()).or_insert(0) += 1;
+            }
+        }
+
+        mapa.into_iter()
+            .map(|(categoria, cantidad_ventas)| ReporteCategoria {
+                categoria,
+                total_ventas: cantidad_ventas,
+            })
+            .collect()
+    }
+
+    fn ventas_por_vendedor(&self) -> Vec<ReporteVendedor> {
+        let mut mapa: HashMap<u32, u32> = HashMap::new(); // legajo -> cantidad de ventas
+
+        for venta in &self.ventas {
+            *mapa.entry(venta.vendedor.legajo).or_insert(0) += 1;
+        }
+
+        mapa.into_iter()
+            .map(|(legajo, cantidad_ventas)| ReporteVendedor {
+                vendedor: legajo,
+                total_ventas: cantidad_ventas,
+            })
+            .collect()
+    }
+}
+
+// Implementaciones de las estructuras
+
+impl TitularInfo {
+    pub fn new(
+        nombre: String,
+        numero: String,
+        fecha_vencimiento: Fecha,
+        codigo_seguridad: String,
+    ) -> Self {
+        TitularInfo {
+            nombre,
+            numero,
+            fecha_vencimiento,
+            codigo_seguridad,
+        }
+    }
+}
+
+impl TransferenciaInfo {
+    pub fn new(titular: String, cbu: String, id_transferencia: String) -> Self {
+        TransferenciaInfo {
+            titular,
+            cbu,
+            id_transferencia,
+        }
+    }
+}
+
+impl Descuento for CategoriaProducto {
+    fn obtener_descuento(&self) -> f64 {
+        match self {
+            CategoriaProducto::Tecnologia => 0.0,
+            CategoriaProducto::Alimentos => 0.02,
+            CategoriaProducto::Ropa => 0.01,
+            CategoriaProducto::Hogar => 0.03,
+            CategoriaProducto::Otros => 0.01,
+        }
+    }
+}
+
+impl DescuentoCliente for Cliente {
+    fn descuento_newsletter(&self) -> f64 {
+        if self.newsletter { 0.20 } else { 0.0 }
+    }
+}
+
+/// Información para pagos por transferencia bancaria.
+
+impl Venta {
+    pub fn new(
+        fecha: Fecha,
+        cliente: Cliente,
+        vendedor: Vendedor,
+        medio_pago: MedioPagoTipo,
+        productos: Vec<ProductoVendido>,
+    ) -> Self {
+        Venta {
+            fecha,
+            cliente,
+            vendedor,
+            medio_pago,
+            productos,
+        }
+    }
+    pub fn calcular_precio_final(&self) -> f64 {
+        let subtotal: f64 = self
+            .productos
+            .iter()
+            .map(|p| {
+                let base_total = p.producto.precio_base * (p.cantidad as f64);
+                let descuento = p.producto.categoria.obtener_descuento();
+                base_total * (1.0 - descuento)
+            })
+            .sum();
+
+        let descuento_newsletter = self.cliente.descuento_newsletter();
+        subtotal * (1.0 - descuento_newsletter)
+    }
+}
+/*
+TP4 Ej4
+
+🧾 Implementar una funcionalidad que permita obtener un informe de ventas realizadas por un vendedor específico, filtrando solo aquellas ventas que contengan al menos un producto de una categoría dada.
+
+Este informe debe incluir, ordenado cronológicamente de la venta más reciente a la más antigua, lo siguiente para cada venta:
+
+-Fecha de la venta
+-Productos vendidos y sus cantidades
+-Monto total final de la venta
+-Medio de pago utilizado
+
+La consulta se debe realizar a partir de un identificador único del vendedor (por ejemplo, su número de legajo, según cómo lo hayan modelado), y una categoría de producto como filtro.
+
+*debe retonar una lista de venta con que haya uno de dicha categoria, se retorna esa venta
+*manejar si el vendedor existe
+
+En caso de que el vendedor no tenga ventas que cumplan esa condición, el sistema debe reflejar esa situación de forma adecuada.
+
+🔧 Esta funcionalidad debe implementarse como un método dentro del struct principal del sistema.
+
+🧪 Además, deben incluir los tests necesarios para verificar el correcto funcionamiento de esta funcionalidad.
+
+📌 Firma esperada del método:
+get_historial_ventas(id: id_vendedor, categoria: CategoriaProducto) -> ???
+*/
+#[derive(Debug, Clone, PartialEq)]
+
+struct Informe {
+    fecha: Fecha,
+    productos_vendidos: Vec<ProductoVendido>,
+    monto_total: f64,
+    medio_pago: MedioPagoTipo,
+}
+#[derive(Debug, Clone, PartialEq)]
+
+struct SistemaEntregable {
+    vendedores: Vec<Vendedor>,
+    ventas: Vec<Venta>,
+    reportes: Vec<Reporte>,
+    //Dado un vendedor, va a tener asociado un informe de ventas por catgoria, es decir vendedor A dada una categoria va a volver un informe por venta
+    informes: HashMap<u32, Vec<Informe>>, // legajo del vendedor -> lista de informes
+}
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ErrorSistema {
+    VendedorNoEncontrado,
+    NoHayVentas,
+    VendedorNoTieneVentas,
+}
+
+impl Informe {
+    fn new(
+        fecha: Fecha,                             //fecha de la venta
+        productos_vendidos: Vec<ProductoVendido>, //productos vendidos en la venta
+        monto_total: f64,                         // monto total de la venta
+        medio_pago: MedioPagoTipo,                // medio de pago utilizado para dicha venta
+    ) -> Self {
+        Informe {
+            fecha: fecha,
+            productos_vendidos,
+            monto_total,
+            medio_pago,
+        }
+    }
+}
+
+impl SistemaEntregable {
+    fn new() -> Self {
+        SistemaEntregable {
+            vendedores: vec![],
+            ventas: vec![],
+            reportes: vec![],
+            informes: HashMap::new(), // legajo del vendedor -> lista de informes
+        }
+    }
+    fn vendedor_existe(&self, id_legajo: u32) -> bool {
+        self.vendedores.iter().any(|v| v.legajo == id_legajo)
+    }
+
+    fn ventas_existe(&self) -> bool {
+        !self.ventas.is_empty()
+    }
+
+    fn filtrar_ventas_por_vendedor_y_categoria(
+        &self,
+        id_legajo: u32,
+        categoria: CategoriaProducto,
+    ) -> Vec<Venta> {
+        self.ventas
+            .iter()
+            .filter(|v| {
+                v.vendedor.legajo == id_legajo
+                    && v.productos
+                        .iter()
+                        .any(|p| p.producto.categoria == categoria)
+            })
+            .cloned()
+            .collect()
+    }
+
+    //replantear esto, el informe deberia estar ordenado por fecha de venta, de mas reciente a mas antigua
+    fn ordenar_ventas_por_fecha_reciente_antiguo(&self, ventas: &mut Vec<Venta>) {
+        ventas.sort_by(|a, b| {
+            if a.fecha.igual(&b.fecha) {
+                std::cmp::Ordering::Equal
+            } else if a.fecha.es_mayor(&b.fecha) {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            }
+        });
+    }
+    fn get_historial_venta(
+        &self, //      &mut self si quieren que insertemos el informe en el sistema?
+        id_legajo: u32,
+        categoria: CategoriaProducto,
+    ) -> Result<Vec<Informe>, ErrorSistema> {
+        // Verificar si el vendedor existe
+        if !self.vendedor_existe(id_legajo) {
+            return Err(ErrorSistema::VendedorNoEncontrado);
+        };
+        if !self.ventas_existe() {
+            return Err(ErrorSistema::NoHayVentas);
+        }
+
+        //Aca tenemos filtramos las ventas por el vendedor y la categoria de producto
+        let mut ventas_filtradas =
+            self.filtrar_ventas_por_vendedor_y_categoria(id_legajo, categoria);
+
+        if ventas_filtradas.is_empty() {
+            return Err(ErrorSistema::VendedorNoTieneVentas);
+        };
+        //Ordenar las ventas por fecha de forma mas reciente a mas antigua
+        self.ordenar_ventas_por_fecha_reciente_antiguo(&mut ventas_filtradas);
+
+        // Crear un vector de informes
+        let mut vect_informes: Vec<Informe> = vec![];
+        for venta in &ventas_filtradas {
+            // Calcular el monto total de la venta
+            let monto_total = venta.calcular_precio_final();
+            // Obtener la fecha de la venta
+            let fecha = venta.fecha.clone();
+            // Obtener el medio de pago utilizado
+            let medio_pago = venta.medio_pago.clone();
+            // Obtener los productos vendidos de dicha venta
+            let productos_vendidos = venta.productos.clone();
+            // Crear el informe
+            let informe = Informe::new(fecha, productos_vendidos, monto_total, medio_pago);
+            vect_informes.push(informe);
+        }
+        // Retornamos e insertamos en el sistema el informe para el vendedor?
+        //self.insertar_informe_en_sistema(id_legajo, &vect_informes);
+        // Retornamos el informe
+        Ok(vect_informes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CategoriaProducto::*;
+    use super::MedioPagoTipo::*;
+    use super::*;
+
+    fn fecha_dummy() -> Fecha {
+        Fecha::new(1, 1, 2000).expect("Fecha inválida en fecha_dummy")
+    }
+    fn titular_info() -> TitularInfo {
+        TitularInfo::new(
+            "Juan Perez".to_string(),
+            "1234".to_string(),
+            fecha_dummy(),
+            "999".to_string(),
+        )
+    }
+    fn transferencia_info() -> TransferenciaInfo {
+        TransferenciaInfo::new("Pedro".to_string(), "CBU123".to_string(), "ID2".to_string())
+    }
+    fn persona(nombre: &str) -> Persona {
+        Persona {
+            nombre: nombre.to_string(),
+            apellido: "Apellido".to_string(),
+            direccion: "Calle 1".to_string(),
+            dni: "12345678".to_string(),
+        }
+    }
+    fn vendedor(legajo: u32) -> Vendedor {
+        Vendedor {
+            persona: persona("Vendedor"),
+            legajo,
+            salario: 1000.0,
+            antiguedad: 5,
+        }
+    }
+    fn cliente(newsletter: bool) -> Cliente {
+        Cliente {
+            persona: persona("Cliente"),
+            newsletter,
+            correo: if newsletter {
+                Some("mail@mail.com".to_string())
+            } else {
+                None
+            },
+        }
+    }
+    fn producto(nombre: &str, cat: CategoriaProducto, precio: f64) -> Producto {
+        Producto {
+            nombre: nombre.to_string(),
+            categoria: cat,
+            precio_base: precio,
+        }
+    }
+    fn prod_vendido(
+        nombre: &str,
+        cat: CategoriaProducto,
+        precio: f64,
+        cantidad: u32,
+    ) -> ProductoVendido {
+        ProductoVendido {
+            producto: producto(nombre, cat, precio),
+            cantidad,
+        }
+    }
+
+    fn sistema_venta() -> SistemaVenta {
+        SistemaVenta {
+            vendedores: vec![vendedor(1)],
+            clientes: HashMap::new(),
+            ventas: vec![],
+            reportes: vec![],
+        }
+    }
+
+    fn ventas_dummy_1() -> Vec<Venta> {
+        let v1 = Venta::new(
+            fecha_dummy(),
+            cliente(false),
+            vendedor(1),
+            Efectivo,
+            vec![prod_vendido("Remera", Ropa, 100.0, 2)],
+        );
+        let v2 = Venta::new(
+            fecha_dummy(),
+            cliente(false),
+            vendedor(2),
+            Efectivo,
+            vec![prod_vendido("Silla", Hogar, 300.0, 1)],
+        );
+        let v3 = Venta::new(
+            fecha_dummy(),
+            cliente(false),
+            vendedor(1),
+            Efectivo,
+            vec![prod_vendido("Pan", Alimentos, 50.0, 2)],
+        );
+        let ventas = vec![v1, v2, v3];
+        ventas
+    }
+
+    #[test]
+    fn test_sistema_venta_new() {
+        let sistema = SistemaVenta::new();
+        assert!(sistema.vendedores.is_empty());
+        assert!(sistema.clientes.is_empty());
+        assert!(sistema.ventas.is_empty());
+        assert!(sistema.reportes.is_empty());
+    }
+
+    #[test]
+    fn test_transferencia_info_new() {
+        let info = TransferenciaInfo::new(
+            "Titular".to_string(),
+            "CBU123".to_string(),
+            "ID1".to_string(),
+        );
+        assert_eq!(info.titular, "Titular");
+        assert_eq!(info.cbu, "CBU123");
+        assert_eq!(info.id_transferencia, "ID1");
+    }
+
+    #[test]
+    fn registrar_vendedor_exitoso() {
+        let mut sistema = sistema_venta();
+        let v = vendedor(2);
+        sistema.registrar_vendedor(v.clone());
+        assert!(sistema.vendedores.contains(&v));
+    }
+    #[test]
+    fn registrar_cliente_exitoso() {
+        let mut sistema = sistema_venta();
+        let c = cliente(false);
+        sistema.registrar_cliente(c.clone());
+        assert!(sistema.clientes.contains_key(&c.persona.dni));
+    }
+
+    #[test]
+    fn test_registrar_venta_exitoso() {
+        let mut sistema = sistema_venta();
+        let v = Venta::new(
+            fecha_dummy(),
+            cliente(false),
+            vendedor(1),
+            Efectivo,
+            vec![prod_vendido("Notebook", Tecnologia, 1000.0, 1)],
+        );
+        sistema.registrar_venta(v.clone());
+        assert!(sistema.ventas.contains(&v));
+    }
+
+    #[test]
+    fn test_reporte_ventas_categoria() {
+        let mut sistema = sistema_venta();
+        let ventas = ventas_dummy_1();
+        for v in ventas {
+            sistema.registrar_venta(v);
+        }
+        sistema.generar_reporte();
+        let reporte = &sistema.reportes[0];
+        let categorias = &reporte.por_categoria;
+        assert_eq!(categorias.len(), 3); // Ropa, Hogar, Alimentos
+        assert!(categorias.iter().any(|c| c.categoria == Ropa));
+        assert!(categorias.iter().any(|c| c.categoria == Hogar));
+        assert!(categorias.iter().any(|c| c.categoria == Alimentos));
+    }
+
+    #[test]
+    fn test_reporte_ventas_vendedor() {
+        let mut sistema = sistema_venta();
+        let ventas = ventas_dummy_1();
+        for v in ventas {
+            sistema.registrar_venta(v);
+        }
+        sistema.generar_reporte();
+        let reporte = &sistema.reportes[0];
+        let vendedores = &reporte.por_vendedor;
+        assert_eq!(vendedores.len(), 2); // Vendedor 1 y Vendedor 2
+        assert!(vendedores.iter().any(|v| v.vendedor == 1));
+        assert!(vendedores.iter().any(|v| v.vendedor == 2));
+    }
+
+    #[test]
+    fn test_reporte_ventas_vendedor_sin_ventas() {
+        let mut sistema = sistema_venta();
+        let ventas = ventas_dummy_1();
+        let vendedor_sin_ventas = vendedor(3);
+        sistema.registrar_vendedor(vendedor_sin_ventas);
+        for v in ventas {
+            sistema.registrar_venta(v);
+        }
+        sistema.generar_reporte();
+        let reporte = &sistema.reportes[0];
+        let vendedores = &reporte.por_vendedor;
+        assert_eq!(vendedores.len(), 2); // Vendedor 1 y Vendedor 2
+        assert!(vendedores.iter().any(|v| v.vendedor == 1));
+        assert!(vendedores.iter().any(|v| v.vendedor == 2));
+        // Vendedor 3 no tiene ventas, no debe aparecer en el reporte
+        assert!(!vendedores.iter().any(|v| v.vendedor == 3));
+    }
+
+    fn test_descuento_categoria() {
+        assert_eq!(Tecnologia.obtener_descuento(), 0.0);
+        assert_eq!(Alimentos.obtener_descuento(), 0.02);
+        assert_eq!(Ropa.obtener_descuento(), 0.01);
+        assert_eq!(Hogar.obtener_descuento(), 0.03);
+        assert_eq!(Otros.obtener_descuento(), 0.01);
+    }
+
+    #[test]
+    fn test_descuento_cliente_newsletter() {
+        let c = cliente(true);
+        let c2 = cliente(false);
+        assert_eq!(c.descuento_newsletter(), 0.20);
+        assert_eq!(c2.descuento_newsletter(), 0.0);
+    }
+
+    #[test]
+    fn test_venta_precio_final_sin_descuentos() {
+        let v = Venta::new(
+            fecha_dummy(),
+            cliente(false),
+            vendedor(1),
+            Efectivo,
+            vec![prod_vendido("Notebook", Tecnologia, 1000.0, 1)],
+        );
+        assert_eq!(v.calcular_precio_final(), 1000.0);
+    }
+
+    #[test]
+    fn test_venta_precio_final_con_descuento_categoria() {
+        let v = Venta::new(
+            fecha_dummy(),
+            cliente(false),
+            vendedor(1),
+            Efectivo,
+            vec![prod_vendido("Pan", Alimentos, 100.0, 2)],
+        );
+        // 2% descuento en alimentos
+        assert!((v.calcular_precio_final() - 196.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_venta_precio_final_con_newsletter() {
+        let v = Venta::new(
+            fecha_dummy(),
+            cliente(true),
+            vendedor(1),
+            Efectivo,
+            vec![prod_vendido("Remera", Ropa, 200.0, 1)],
+        );
+        // 1% descuento ropa, luego 20% newsletter
+        let esperado = 200.0 * 0.99 * 0.8;
+        assert!((v.calcular_precio_final() - esperado).abs() < 0.01);
+    }
+    /*
+    #[test]
+    fn test_reporte_ventas_por_categoria() {
+
+        let reporte = Reporte
+
+        let cat = rep.ventas_por_categoria();
+        assert!((cat[&Ropa] - 198.0).abs() < 0.01);
+        assert!((cat[&Hogar] - 291.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_reporte_ventas_por_vendedor() {
+        let v1 = Venta::new(
+            fecha_dummy(),
+            cliente(false),
+            vendedor(1),
+            Efectivo,
+            vec![prod_vendido("Remera", Ropa, 100.0, 2)],
+        );
+        let v2 = Venta::new(
+            fecha_dummy(),
+            cliente(true),
+            vendedor(1),
+            Efectivo,
+            vec![prod_vendido("Silla", Hogar, 300.0, 1)],
+        );
+        let v3 = Venta::new(
+            fecha_dummy(),
+            cliente(false),
+            vendedor(2),
+            Efectivo,
+            vec![prod_vendido("Pan", Alimentos, 50.0, 2)],
+        );
+        let rep = Reporte {
+            ventas: vec![v1, v2, v3],
+        };
+        let vend = rep.ventas_por_vendedor();
+        // vendedor 1 hizo dos ventas
+        assert!(vend.contains_key(&1));
+        assert!(vend.contains_key(&2));
+        // vendedor 1 total: (100*2*0.99) + (300*0.97*0.8)
+        let esperado = 198.0 + 232.8;
+        assert!((vend[&1] - esperado).abs() < 0.01);
+    } */
+
+    fn test_fecha_dummy(d: u32, m: u32, a: i32) -> Fecha {
+        Fecha::new(d, m, a).expect("Fecha inválida en test_fecha_dummy")
+    }
+    #[test]
+    fn test_new() {
+        let fecha = Fecha::new(1, 1, 2000);
+        assert!(fecha.is_some());
+    }
+    #[test]
+    fn test_new_actual() {
+        let fecha = Fecha::new_fecha_actual();
+        assert!(fecha.es_fecha_valida());
+    }
+    #[test]
+    fn test_es_fecha_none() {
+        let fecha = Fecha::new(31, 13, 2000);
+        assert!(fecha.is_none());
+    }
+
+    #[test]
+    fn test_es_fecha_valida() {
+        let fecha = Fecha::new(1, 5, 2000).expect("Fecha Invalida");
+        assert!(fecha.es_fecha_valida())
+    }
+
+    #[test]
+    fn test_es_fecha_invalida() {
+        let fecha = Fecha::new(31, 13, 2000);
+        assert!(fecha.is_none());
+    }
+
+    #[test]
+    fn test_es_bisiesto() {
+        let fecha = Fecha::new(29, 2, 2000);
+        assert!(true == fecha.unwrap().es_bisiesto());
+    }
+
+    #[test]
+    fn test_no_es_bisiesto() {
+        let fecha = Fecha::new(28, 2, 2001);
+        assert!(false == fecha.unwrap().es_bisiesto());
+    }
+
+    #[test]
+    fn test_sumar_dias() {
+        let fecha = Fecha::new(29, 12, 2000).expect("Fecha inválida");
+        let resultado = fecha.sumar_dias(3).expect("Error al sumar días");
+
+        assert_eq!(resultado.mes, 1);
+        assert_eq!(resultado.dia, 1);
+        assert_eq!(resultado.anio, 2001);
+    }
+
+    #[test]
+    fn test_restar_dias() {
+        let fecha = Fecha::new(1, 1, 2000).expect("Fecha inválida");
+        let resultado = fecha.restar_dias(3).expect("Error al restar días");
+
+        assert_eq!(resultado.mes, 12);
+        assert_eq!(resultado.dia, 29);
+        assert_eq!(resultado.anio, 1999);
+    }
+
+    #[test]
+    fn test_fecha_es_mayor() {
+        let fecha1 = Fecha::new(1, 1, 2000).expect("Fecha inválida");
+        let fecha2 = Fecha::new(1, 1, 2001).expect("Fecha inválida");
+        assert!(false == fecha1.es_mayor(&fecha2));
+        assert!(true == fecha2.es_mayor(&fecha1));
+    }
+
+    #[test]
+    fn test_igual_positivo() {
+        let fecha1 = test_fecha_dummy(1, 1, 2000);
+        let fecha2 = test_fecha_dummy(1, 1, 2000);
+        assert!(fecha1.igual(&fecha2));
+    }
+
+    #[test]
+    fn test_igual_negativo() {
+        let fecha1 = test_fecha_dummy(1, 1, 2000);
+        let fecha2 = test_fecha_dummy(2, 1, 2000);
+        assert!(!fecha1.igual(&fecha2));
+    }
+}
