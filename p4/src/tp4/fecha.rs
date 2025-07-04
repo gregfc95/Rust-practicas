@@ -134,4 +134,22 @@ mod tests {
         assert!(false == fecha1.es_mayor(&fecha2));
         assert!(true == fecha2.es_mayor(&fecha1));
     }
+
+    fn test_fecha_dummy(d: u32, m: u32, a: i32) -> Fecha {
+        Fecha::new(d, m, a).expect("Fecha inválida en test_fecha_dummy")
+    }
+
+    #[test]
+    fn test_igual_positivo() {
+        let fecha1 = test_fecha_dummy(1, 1, 2000);
+        let fecha2 = test_fecha_dummy(1, 1, 2000);
+        assert!(fecha1.igual(&fecha2));
+    }
+
+    #[test]
+    fn test_igual_negativo() {
+        let fecha1 = test_fecha_dummy(1, 1, 2000);
+        let fecha2 = test_fecha_dummy(2, 1, 2000);
+        assert!(!fecha1.igual(&fecha2));
+    }
 }
