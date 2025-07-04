@@ -230,7 +230,7 @@ pub struct TransferenciaInfo {
 }
 #[derive(Debug, Clone, PartialEq)]
 struct SistemaVenta {
-    vendedores: Vec<Vendedor>,
+    vendedores: HashMap<u32, Vendedor>,
     clientes: HashMap<String, Cliente>,
     ventas: Vec<Venta>,
     reportes: Vec<Reporte>,
@@ -238,14 +238,14 @@ struct SistemaVenta {
 impl SistemaVenta {
     fn new() -> Self {
         SistemaVenta {
-            vendedores: vec![],
+            vendedores: HashMap::new(),
             clientes: HashMap::new(),
             ventas: vec![],
             reportes: vec![],
         }
     }
     fn registrar_vendedor(&mut self, vendedor: Vendedor) {
-        self.vendedores.push(vendedor);
+        self.vendedores.insert(vendedor.legajo, vendedor);
     }
     fn registrar_cliente(&mut self, cliente: Cliente) {
         self.clientes.insert(cliente.persona.dni.clone(), cliente);
@@ -277,7 +277,6 @@ impl SistemaVenta {
             })
             .collect()
     }
-
     fn ventas_por_vendedor(&self) -> Vec<ReporteVendedor> {
         let mut mapa: HashMap<u32, u32> = HashMap::new(); // legajo -> cantidad de ventas
 
@@ -400,21 +399,21 @@ En caso de que el vendedor no tenga ventas que cumplan esa condición, el sistem
 get_historial_ventas(id: id_vendedor, categoria: CategoriaProducto) -> ???
 */
 #[derive(Debug, Clone, PartialEq)]
-
 struct Informe {
     fecha: Fecha,
     productos_vendidos: Vec<ProductoVendido>,
     monto_total: f64,
     medio_pago: MedioPagoTipo,
 }
+//Profesor dijo que creara una nueva Struct para el segundo entregable, se copiaron todos los metodos usados en SistemaVenta
 #[derive(Debug, Clone, PartialEq)]
-
 struct SistemaEntregable {
-    vendedores: Vec<Vendedor>,
+    vendedores: HashMap<u32, Vendedor>, // legajo del vendedor
+    clientes: HashMap<String, Cliente>, // dni del cliente
     ventas: Vec<Venta>,
     reportes: Vec<Reporte>,
-    //Dado un vendedor, va a tener asociado un informe de ventas por catgoria, es decir vendedor A dada una categoria va a volver un informe por venta
-    informes: HashMap<u32, Vec<Informe>>, // legajo del vendedor -> lista de informes
+    //Dado un vendedor, va a tener asociado un informe de ventas por categoria, es decir vendedor A dada una categoria va a volver un informe por venta
+    informes: Vec<Informe>, //Esto deberia ser un HashMap con el legajo del vendedor -> lista de informes, pero el profesor necesita order por fecha y Hashmap no permite orden
 }
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ErrorSistema {
@@ -438,22 +437,89 @@ impl Informe {
         }
     }
 }
-
+//Implementacion de sistema entregable con los metodos copiados de SistemaVenta
 impl SistemaEntregable {
     fn new() -> Self {
         SistemaEntregable {
-            vendedores: vec![],
+            vendedores: HashMap::new(), // legajo del vendedor
+            clientes: HashMap::new(),   // dni del cliente
             ventas: vec![],
             reportes: vec![],
-            informes: HashMap::new(), // legajo del vendedor -> lista de informes
+            informes: vec![], //Esto deberia ser un HashMap con el legajo del vendedor -> lista de informes, pero el profesor necesita order por fecha y Hashmap no permite orden
         }
     }
-    fn vendedor_existe(&self, id_legajo: u32) -> bool {
-        self.vendedores.iter().any(|v| v.legajo == id_legajo)
+    fn registrar_vendedor(&mut self, vendedor: Vendedor) {
+        self.vendedores.insert(vendedor.legajo, vendedor);
+    }
+    fn registrar_cliente(&mut self, cliente: Cliente) {
+        self.clientes.insert(cliente.persona.dni.clone(), cliente);
+    }
+    fn registrar_venta(&mut self, venta: Venta) {
+        self.ventas.push(venta);
+    }
+    fn generar_reporte(&mut self) {
+        let reporte = Reporte {
+            por_categoria: self.ventas_por_categoria(),
+            por_vendedor: self.ventas_por_vendedor(),
+        };
+        self.reportes.push(reporte);
+    }
+    fn ventas_por_categoria(&self) -> Vec<ReporteCategoria> {
+        let mut mapa: HashMap<CategoriaProducto, u32> = HashMap::new();
+
+        for venta in &self.ventas {
+            for producto in &venta.productos {
+                let cat = &producto.producto.categoria;
+                *mapa.entry(cat.clone()).or_insert(0) += 1;
+            }
+        }
+
+        mapa.into_iter()
+            .map(|(categoria, cantidad_ventas)| ReporteCategoria {
+                categoria,
+                total_ventas: cantidad_ventas,
+            })
+            .collect()
+    }
+    fn ventas_por_vendedor(&self) -> Vec<ReporteVendedor> {
+        let mut mapa: HashMap<u32, u32> = HashMap::new(); // legajo -> cantidad de ventas
+
+        for venta in &self.ventas {
+            *mapa.entry(venta.vendedor.legajo).or_insert(0) += 1;
+        }
+
+        mapa.into_iter()
+            .map(|(legajo, cantidad_ventas)| ReporteVendedor {
+                vendedor: legajo,
+                total_ventas: cantidad_ventas,
+            })
+            .collect()
     }
 
-    fn ventas_existe(&self) -> bool {
-        !self.ventas.is_empty()
+    /// Metodos para el entregable
+    fn vendedor_existe(&self, id_legajo: &u32) -> Result<bool, ErrorSistema> {
+        if self.vendedores.contains_key(id_legajo) {
+            Ok(true)
+        } else {
+            Err(ErrorSistema::VendedorNoEncontrado)
+        }
+    }
+
+    fn ventas_existe(&self) -> Result<bool, ErrorSistema> {
+        if self.ventas.is_empty() {
+            return Err(ErrorSistema::NoHayVentas);
+        }
+        Ok(true)
+    }
+
+    fn vendedor_no_tiene_ventas(
+        &self,
+        ventas_del_vendedor: &Vec<Venta>,
+    ) -> Result<bool, ErrorSistema> {
+        if ventas_del_vendedor.is_empty() {
+            return Err(ErrorSistema::VendedorNoTieneVentas);
+        }
+        Ok(true)
     }
 
     fn filtrar_ventas_por_vendedor_y_categoria(
@@ -472,8 +538,7 @@ impl SistemaEntregable {
             .cloned()
             .collect()
     }
-
-    //replantear esto, el informe deberia estar ordenado por fecha de venta, de mas reciente a mas antigua
+    /// Ordena las ventas por fecha de forma mas reciente a mas antigua usando metodos de "fecha"
     fn ordenar_ventas_por_fecha_reciente_antiguo(&self, ventas: &mut Vec<Venta>) {
         ventas.sort_by(|a, b| {
             if a.fecha.igual(&b.fecha) {
@@ -485,26 +550,30 @@ impl SistemaEntregable {
             }
         });
     }
+    fn insertar_informe_en_sistema(
+        &mut self,
+        vec_informe: Vec<Informe>,
+    ) -> Result<(), ErrorSistema> {
+        // Insertar el informe en el sistema
+        self.informes.extend(vec_informe);
+        Ok(())
+    }
+
     fn get_historial_venta(
         &self, //      &mut self si quieren que insertemos el informe en el sistema?
         id_legajo: u32,
         categoria: CategoriaProducto,
     ) -> Result<Vec<Informe>, ErrorSistema> {
-        // Verificar si el vendedor existe
-        if !self.vendedor_existe(id_legajo) {
-            return Err(ErrorSistema::VendedorNoEncontrado);
-        };
-        if !self.ventas_existe() {
-            return Err(ErrorSistema::NoHayVentas);
-        }
+        // Verificar si el vendedor existe, sino devuelve un ErrorSistema::VendedorNoEncontrado
+        self.vendedor_existe(&id_legajo)?;
+        // Verificar si hay ventas registradas, sino devuelve un ErrorSistema::NoHayVentas
+        self.ventas_existe()?;
 
         //Aca tenemos filtramos las ventas por el vendedor y la categoria de producto
         let mut ventas_filtradas =
             self.filtrar_ventas_por_vendedor_y_categoria(id_legajo, categoria);
 
-        if ventas_filtradas.is_empty() {
-            return Err(ErrorSistema::VendedorNoTieneVentas);
-        };
+        self.vendedor_no_tiene_ventas(&ventas_filtradas)?;
         //Ordenar las ventas por fecha de forma mas reciente a mas antigua
         self.ordenar_ventas_por_fecha_reciente_antiguo(&mut ventas_filtradas);
 
@@ -523,19 +592,26 @@ impl SistemaEntregable {
             let informe = Informe::new(fecha, productos_vendidos, monto_total, medio_pago);
             vect_informes.push(informe);
         }
-        // Retornamos e insertamos en el sistema el informe para el vendedor?
-        //self.insertar_informe_en_sistema(id_legajo, &vect_informes);
-        // Retornamos el informe
+        // No se si correcto insertar en el sistema el informe y lo devolverlo? pero debo cambiar la firma a '&self' error: (cannot borrow `*self` as mutable, as it is behind a `&` reference)
+
+        //self.insertar_informe_en_sistema(vect_informes.clone());
+        // Retornamos el informe en forma de Vec porque necesito Orden (mas reciente)
         Ok(vect_informes)
     }
 }
 
+//Tests
 #[cfg(test)]
 mod tests {
+    use core::error;
+
+    use crate::tp4::fecha;
+
     use super::CategoriaProducto::*;
     use super::MedioPagoTipo::*;
     use super::*;
 
+    //Funciones auxiliares para crear datos de prueba
     fn fecha_dummy() -> Fecha {
         Fecha::new(1, 1, 2000).expect("Fecha inválida en fecha_dummy")
     }
@@ -597,24 +673,35 @@ mod tests {
     }
 
     fn sistema_venta() -> SistemaVenta {
-        SistemaVenta {
-            vendedores: vec![vendedor(1)],
-            clientes: HashMap::new(),
-            ventas: vec![],
-            reportes: vec![],
-        }
+        let vendedor1 = vendedor(1);
+        let mut sistema = SistemaVenta::new();
+        //agregar vendedor
+        sistema.registrar_vendedor(vendedor1);
+        sistema
+    }
+
+    //Sistema entregable, se usa para los tests del entregable
+    fn sistema_entregable() -> SistemaEntregable {
+        let vendedor1 = vendedor(1);
+        let mut sistema = SistemaEntregable::new();
+        //agregar vendedor
+        sistema.registrar_vendedor(vendedor1);
+        sistema
     }
 
     fn ventas_dummy_1() -> Vec<Venta> {
         let v1 = Venta::new(
-            fecha_dummy(),
+            Fecha::new_fecha_actual(),
             cliente(false),
             vendedor(1),
             Efectivo,
-            vec![prod_vendido("Remera", Ropa, 100.0, 2)],
+            vec![
+                prod_vendido("Remera", Ropa, 100.0, 2),
+                prod_vendido("Celular", Tecnologia, 1500.0, 2),
+            ],
         );
         let v2 = Venta::new(
-            fecha_dummy(),
+            Fecha::new(1, 1, 2024).expect("Fecha inválida en ventas_dummy_1"),
             cliente(false),
             vendedor(2),
             Efectivo,
@@ -627,10 +714,242 @@ mod tests {
             Efectivo,
             vec![prod_vendido("Pan", Alimentos, 50.0, 2)],
         );
-        let ventas = vec![v1, v2, v3];
+        let v4 = Venta::new(
+            fecha_dummy(),
+            cliente(false),
+            vendedor(2),
+            Efectivo,
+            vec![prod_vendido("Celular", Tecnologia, 500.0, 1)],
+        );
+        let v5 = Venta::new(
+            Fecha::new(3, 1, 2024).expect("Fecha inválida en ventas_dummy_1"),
+            cliente(false),
+            vendedor(2),
+            Efectivo,
+            vec![prod_vendido("Mesa", Hogar, 200.0, 1)],
+        );
+        let ventas = vec![v1, v2, v3, v4, v5];
         ventas
     }
 
+    #[test]
+    fn test_sistema_entregable_new() {
+        let sistema = SistemaEntregable::new();
+        assert!(sistema.vendedores.is_empty());
+        assert!(sistema.clientes.is_empty());
+        assert!(sistema.ventas.is_empty());
+        assert!(sistema.reportes.is_empty());
+    }
+
+    #[test]
+    fn registrar_vendedor_entregable_exitoso() {
+        let mut sistema = sistema_entregable();
+        let v = vendedor(2);
+        sistema.registrar_vendedor(v.clone());
+        assert!(sistema.vendedores.contains_key(&v.legajo));
+    }
+    #[test]
+    fn registrar_cliente_entregable_exitoso() {
+        let mut sistema = sistema_entregable();
+        let c = cliente(false);
+        sistema.registrar_cliente(c.clone());
+        assert!(sistema.clientes.contains_key(&c.persona.dni));
+    }
+    #[test]
+    fn registrar_venta_entregable_exitoso() {
+        let mut sistema = sistema_entregable();
+        let v = ventas_dummy_1();
+
+        for venta in v {
+            sistema.registrar_venta(venta);
+        }
+        assert_eq!(sistema.ventas.len(), 5);
+    }
+    #[test]
+    fn test_reporte_entregable_ventas_categoria() {
+        let mut sistema = sistema_entregable();
+        let ventas = ventas_dummy_1();
+        for v in ventas {
+            sistema.registrar_venta(v);
+        }
+        sistema.generar_reporte();
+        let reporte = &sistema.reportes[0];
+        let categorias = &reporte.por_categoria;
+        assert_eq!(categorias.len(), 4); // Ropa, Hogar, Alimentos
+        assert!(categorias.iter().any(|c| c.categoria == Ropa));
+        assert!(categorias.iter().any(|c| c.categoria == Hogar));
+        assert!(categorias.iter().any(|c| c.categoria == Alimentos));
+    }
+
+    #[test]
+    fn test_reporte_entregable_ventas_vendedor() {
+        let mut sistema = sistema_entregable();
+        let ventas = ventas_dummy_1();
+        for v in ventas {
+            sistema.registrar_venta(v);
+        }
+        sistema.generar_reporte();
+        let reporte = &sistema.reportes[0];
+        let vendedores = &reporte.por_vendedor;
+        assert_eq!(vendedores.len(), 2); // Vendedor 1 y Vendedor 2
+        assert!(vendedores.iter().any(|v| v.vendedor == 1));
+        assert!(vendedores.iter().any(|v| v.vendedor == 2));
+    }
+
+    #[test]
+    fn test_vendedor_existe() {
+        let sistema = sistema_entregable();
+        assert!(sistema.vendedor_existe(&1).is_ok());
+    }
+    #[test]
+    fn test_vendedor_no_existe() {
+        let sistema = sistema_entregable();
+        let error_esperado = ErrorSistema::VendedorNoEncontrado;
+        assert!(sistema.vendedor_existe(&999).is_err());
+        assert!(matches!(sistema.vendedor_existe(&999), error_esperado));
+    }
+    #[test]
+    fn test_ventas_existe() {
+        let mut sistema = sistema_entregable();
+        let ventas = ventas_dummy_1();
+        for v in ventas {
+            sistema.registrar_venta(v);
+        }
+        // Debe ser Ok, porque sí hay ventas
+        assert!(sistema.ventas_existe().is_ok());
+    }
+    #[test]
+    fn test_ventas_no_existe() {
+        let sistema = sistema_entregable();
+        let error_esperado = ErrorSistema::NoHayVentas;
+        assert!(sistema.ventas_existe().is_err());
+        assert!(matches!(sistema.ventas_existe(), error_esperado));
+    }
+    #[test]
+    fn test_vendedor_no_tiene_ventas() {
+        let mut sistema = sistema_entregable();
+        let ventas = ventas_dummy_1();
+        for v in ventas {
+            sistema.registrar_venta(v);
+        }
+        let vendedor_sin_ventas = vendedor(999);
+        sistema.registrar_vendedor(vendedor_sin_ventas);
+        let ventas_del_vendedor: Vec<Venta> = vec![];
+        let error_esperado = ErrorSistema::VendedorNoTieneVentas;
+        assert!(
+            sistema
+                .vendedor_no_tiene_ventas(&ventas_del_vendedor)
+                .is_err()
+        );
+        assert!(matches!(
+            sistema.vendedor_no_tiene_ventas(&ventas_del_vendedor),
+            error_esperado
+        ));
+    }
+    #[test]
+    fn test_vendedor_tiene_ventas() {
+        let mut sistema = sistema_entregable();
+        let ventas = ventas_dummy_1();
+        for v in ventas {
+            sistema.registrar_venta(v);
+        }
+        // Filtrar las ventas del vendedor 1
+        let ventas_del_vendedor: Vec<Venta> = sistema
+            .ventas
+            .iter()
+            .filter(|venta| venta.vendedor.legajo == 1)
+            .cloned()
+            .collect();
+
+        // Debe ser Ok, porque sí tiene ventas
+        assert!(
+            sistema
+                .vendedor_no_tiene_ventas(&ventas_del_vendedor)
+                .is_ok()
+        );
+    }
+    #[test]
+    fn test_ordenar_ventas_por_fecha_reciente_antiguo_positivo() {
+        let mut sistema = sistema_entregable();
+        // Fechas: actual, 2000, 2024
+        let mut ventas = ventas_dummy_1();
+        sistema.ordenar_ventas_por_fecha_reciente_antiguo(&mut ventas);
+        // Verificar que las fechas están ordenadas de más reciente a más antigua
+        assert_eq!(ventas.len(), 5);
+        assert!(ventas[0].fecha.es_mayor(&ventas[1].fecha));
+        assert!(ventas[1].fecha.es_mayor(&ventas[2].fecha));
+    }
+    #[test]
+    fn test_filtrar_ventas_por_vendedor_y_categoria_positivo() {
+        let mut sistema = sistema_entregable();
+        let ventas = ventas_dummy_1();
+        for v in ventas {
+            sistema.registrar_venta(v);
+        }
+        // Vendedor 1 tiene ventas de Ropa y Alimentos y Tecnologia
+        let ventas_filtradas = sistema.filtrar_ventas_por_vendedor_y_categoria(1, Ropa);
+        assert!(!ventas_filtradas.is_empty());
+        // Todas las ventas filtradas deben ser del vendedor 1 y contener al menos un producto de Ropa
+        for venta in &ventas_filtradas {
+            assert_eq!(venta.vendedor.legajo, 1);
+            assert!(venta.productos.iter().any(|p| p.producto.categoria == Ropa));
+        }
+    }
+
+    #[test]
+    fn test_filtrar_ventas_por_vendedor_y_categoria_negativo() {
+        let mut sistema = sistema_entregable();
+        let ventas = ventas_dummy_1();
+        for v in ventas {
+            sistema.registrar_venta(v);
+        }
+        // Vendedor 1 no tiene ventas de Hogar
+        let ventas_filtradas = sistema.filtrar_ventas_por_vendedor_y_categoria(1, Hogar);
+        assert!(ventas_filtradas.is_empty());
+    }
+
+    #[test]
+    fn test_get_historial_venta_error_vendedor_no_encontrado() {
+        let sistema = sistema_entregable();
+        let resultado = sistema.get_historial_venta(999, Ropa);
+        assert!(matches!(resultado, Err(ErrorSistema::VendedorNoEncontrado)));
+    }
+    #[test]
+    fn test_get_historial_venta_error_no_hay_ventas() {
+        let mut sistema = sistema_entregable();
+        // El vendedor existe, pero no hay ventas registradas
+        let v = vendedor(1);
+        sistema.registrar_vendedor(v);
+        let resultado = sistema.get_historial_venta(1, Ropa);
+        assert!(matches!(resultado, Err(ErrorSistema::NoHayVentas)));
+    }
+    #[test]
+    fn test_get_historial_venta_error_vendedor_no_tiene_ventas_de_categoria() {
+        let mut sistema = sistema_entregable();
+        let ventas = ventas_dummy_1();
+        for v in ventas {
+            sistema.registrar_venta(v);
+        }
+        // Vendedor 1 no tiene ventas de Hogar
+        let resultado = sistema.get_historial_venta(1, Hogar);
+        assert!(matches!(
+            resultado,
+            Err(ErrorSistema::VendedorNoTieneVentas)
+        ));
+    }
+    #[test]
+    fn test_get_historial_venta_exitoso() {
+        let mut sistema = sistema_entregable();
+        let ventas = ventas_dummy_1();
+        for v in ventas {
+            sistema.registrar_venta(v);
+        }
+        // Vendedor 1 tiene ventas de Ropa y Alimentos y Tecnologia
+        let resultado = sistema.get_historial_venta(1, Ropa);
+        assert!(resultado.is_ok());
+    }
+
+    //Test SistemaVenta
     #[test]
     fn test_sistema_venta_new() {
         let sistema = SistemaVenta::new();
@@ -670,7 +989,7 @@ mod tests {
         let mut sistema = sistema_venta();
         let v = vendedor(2);
         sistema.registrar_vendedor(v.clone());
-        assert!(sistema.vendedores.contains(&v));
+        assert!(sistema.vendedores.contains_key(&v.legajo));
     }
     #[test]
     fn registrar_cliente_exitoso() {
@@ -704,7 +1023,7 @@ mod tests {
         sistema.generar_reporte();
         let reporte = &sistema.reportes[0];
         let categorias = &reporte.por_categoria;
-        assert_eq!(categorias.len(), 3); // Ropa, Hogar, Alimentos
+        assert_eq!(categorias.len(), 4); // Ropa, Hogar, Alimentos
         assert!(categorias.iter().any(|c| c.categoria == Ropa));
         assert!(categorias.iter().any(|c| c.categoria == Hogar));
         assert!(categorias.iter().any(|c| c.categoria == Alimentos));
@@ -811,6 +1130,7 @@ mod tests {
         assert_eq!(informe.medio_pago, medio_pago);
     }
 
+    //Test de fechas
     fn test_fecha_dummy(d: u32, m: u32, a: i32) -> Fecha {
         Fecha::new(d, m, a).expect("Fecha inválida en test_fecha_dummy")
     }
