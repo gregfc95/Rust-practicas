@@ -1,0 +1,512 @@
+/*
+7- Defina una estructura llamada ConcesionarioAuto donde se conoce el nombre, la
+dirección y tiene una capacidad máxima para albergar X cantidad de autos. De los autos se
+conocen los campos de la marca, modelo, año, precio bruto y color que pueden ser:rojo,
+verde, azul, amarillo, blanco o negro.
+Para dichas estructuras implemente los siguientes métodos:
+❖ ConcesionarioAuto:
+➢ new: que pasando los parámetros correspondientes, crea un
+ConcesionarioAuto y lo retorna.
+➢ agregar_auto(auto): agrega un auto a la lista de autos que tiene sin superar
+la máxima cantidad para albergarlos y retorna true, en caso de que lo supere
+no lo agrega y retorna false.
+➢ eliminar_auto(auto): elimina un auto de la lista de autos.
+➢ buscar_auto(auto): busca un auto y si lo encuentra lo retorna.
+❖ Auto:
+➢ new: que pasando los parámetros correspondientes, crea un Auto y lo
+retorna.
+➢ calcular_precio: retorna el precio del auto aplicando los siguientes criterios:
+■ si es de color primario le aplica un recargo del 25%, sino le aplica un
+descuento del 10%.
+■ si la marca es BMW le aplica un recargo del 15%-
+■ si el año es menor a 2000 le aplica un descuento del 5%.
+
+
+
+En base al ejercicio 7 del tp#3 implemente lo siguiente:
+a- Al agregar un auto si supera el límite de la concesionaria debe arrojar un error
+propio con un mensaje de contexto.
+b- Haga todos los tests correspondientes para probar en profundidad los métodos
+que agregan un auto y eliminan un auto de la concesionaria , obteniendo el mayor
+porcentaje de coverage sobre el código que realiza las operaciones.
+c- Una vez hecho el punto anterior debe hacer que los autos de la concesionaria se
+almacenen en un archivo en formato JSON. Agregue y modifique lo que considere
+necesario para que:
+- Al agregar un nuevo auto se abre el archivo de autos guardados y lo agregue a
+dicho archivo.
+- Eliminar un auto: al eliminar un auto se debe eliminar este del archivo.
+No debe modificar los tests hechos en el punto b. Si puede agregar más en caso de que
+haga nueva funcionalidad..
+
+*/
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::fs::File;
+use std::io;
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum Color {
+    Rojo,
+    Verde,
+    Azul,
+    Amarillo,
+    Blanco,
+    Negro,
+}
+#[derive(Debug, PartialEq)]
+pub enum ConcesionarioError {
+    CapacidadMaxima,
+    AutoNoEncontrado,
+    Archivo(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Auto {
+    marca: String,
+    modelo: String,
+    anio: u32,
+    precio_bruto: f32,
+    color: Color,
+}
+#[derive(Serialize, Deserialize)]
+
+pub struct Concesionario {
+    nombre: String,
+    direccion: String,
+    capacidad_maxima: u32,
+    autos: Vec<Auto>,
+}
+
+impl Concesionario {
+    pub fn new(nombre: String, direccion: String, capacidad_maxima: u32, autos: Vec<Auto>) -> Self {
+        Concesionario {
+            nombre,
+            direccion,
+            capacidad_maxima,
+            autos,
+        }
+    }
+    pub fn agregar_auto(&mut self, auto: Auto) -> bool {
+        if self.autos.len() < self.capacidad_maxima as usize {
+            self.autos.push(auto);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn agregar_auto_con_error(&mut self, auto: Auto) -> Result<(), ConcesionarioError> {
+        if self.autos.len() < self.capacidad_maxima as usize {
+            self.autos.push(auto);
+            Ok(())
+        } else {
+            Err(ConcesionarioError::CapacidadMaxima)
+        }
+    }
+
+    pub fn eliminar_auto(&mut self, auto: &Auto) -> Option<Auto> {
+        //TODO PartialEq
+        let index = self.autos.iter().position(|a| {
+            a.anio == auto.anio
+                && a.modelo == auto.modelo
+                && a.marca == auto.marca
+                && a.color == auto.color
+        })?;
+        Some(self.autos.remove(index))
+    }
+
+    pub fn eliminar_auto_result(&mut self, auto: &Auto) -> Result<Auto, ConcesionarioError> {
+        if self.autos.is_empty() {
+            return Err(ConcesionarioError::AutoNoEncontrado);
+        }
+        let index = self
+            .autos
+            .iter()
+            .position(|a| {
+                a.anio == auto.anio
+                    && a.modelo == auto.modelo
+                    && a.marca == auto.marca
+                    && a.color == auto.color
+            })
+            .ok_or(ConcesionarioError::AutoNoEncontrado)?;
+        Ok(self.autos.remove(index))
+    }
+
+    pub fn eliminar_auto_y_guardar(&mut self, auto: &Auto, path: &str) -> Option<Auto> {
+        let res = self.eliminar_auto(auto);
+        let _ = self.guardar_en_archivo(path);
+        res
+    }
+    pub fn agregar_auto_y_guardar(&mut self, auto: Auto, path: &str) -> bool {
+        let ok = self.agregar_auto(auto);
+        let _ = self.guardar_en_archivo(path);
+        ok
+    }
+
+    pub fn guardar_en_archivo(&self, path: &str) -> Result<(), ConcesionarioError> {
+        serde_json::to_writer_pretty(
+            File::create(path).map_err(|e| ConcesionarioError::Archivo(e.to_string()))?,
+            &self.autos,
+        )
+        .map_err(|e| ConcesionarioError::Archivo(e.to_string()))
+    }
+
+    pub fn buscar_auto(&self, auto: &Auto) -> Option<&Auto> {
+        self.autos.iter().find(|a| {
+            a.anio == auto.anio
+                && a.modelo == auto.modelo
+                && a.marca == auto.marca
+                && a.color == auto.color
+        })
+    }
+}
+
+impl Auto {
+    pub fn new(marca: String, modelo: String, anio: u32, precio_bruto: f32, color: Color) -> Self {
+        Auto {
+            marca,
+            modelo,
+            anio,
+            precio_bruto,
+            color,
+        }
+    }
+
+    pub fn calcular_precio(&self) -> f32 {
+        let mut precio = self.precio_bruto;
+        if matches!(self.color, Color::Rojo | Color::Amarillo | Color::Azul) {
+            precio = Auto::recargo_color_primario(precio)
+        } else {
+            precio = Auto::descuento_color(precio)
+        }
+        if self.marca.eq_ignore_ascii_case("bmw") {
+            precio = Auto::recargo_marca_bmw(precio)
+        }
+        if self.anio < 2000 {
+            precio = Auto::descuento_anio(precio)
+        }
+        precio
+    }
+
+    fn recargo_color_primario(precio: f32) -> f32 {
+        return precio * 1.25;
+    }
+    fn recargo_marca_bmw(precio: f32) -> f32 {
+        return precio * 1.15;
+    }
+    fn descuento_color(precio: f32) -> f32 {
+        return precio * 0.90;
+    }
+    fn descuento_anio(precio: f32) -> f32 {
+        return precio * 0.95;
+    }
+}
+
+//TESTS
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::vec;
+
+    fn path_test() -> &'static str {
+        "test_autos.json"
+    }
+    fn helper_crear_concesionario() -> Concesionario {
+        Concesionario::new("TuAutoExpress".to_string(), "calle".to_string(), 2, vec![])
+    }
+    fn helper_crear_auto1() -> Auto {
+        Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            1995,
+            10000.0,
+            Color::Blanco,
+        )
+    }
+    fn helper_crear_auto2() -> Auto {
+        Auto::new(
+            "Renault".to_string(),
+            "x5".to_string(),
+            2010,
+            10000.0,
+            Color::Amarillo,
+        )
+    }
+    fn helper_crear_auto3() -> Auto {
+        Auto::new(
+            "BMW".to_string(),
+            "x5".to_string(),
+            2010,
+            10000.0,
+            Color::Azul,
+        )
+    }
+    #[test]
+    fn crear_concesionario() {
+        let concesionario =
+            Concesionario::new("TuAutoExpress".to_string(), "calle".to_string(), 10, vec![]);
+        assert_eq!(concesionario.nombre, "TuAutoExpress");
+        assert_eq!(concesionario.direccion, "calle");
+        assert_eq!(concesionario.capacidad_maxima, 10);
+    }
+
+    #[test]
+    fn test_eliminar_auto_result() {
+        let auto = helper_crear_auto1();
+        let mut concesionario = helper_crear_concesionario();
+        let path = path_test();
+        // Elimina existente
+        concesionario.agregar_auto_y_guardar(auto.clone(), path);
+        let eliminado = concesionario.eliminar_auto_result(&auto).unwrap();
+        assert_eq!(eliminado, auto);
+        // Elimina inexistente
+        let res = concesionario.eliminar_auto_result(&auto);
+        assert_eq!(res, Err(ConcesionarioError::AutoNoEncontrado));
+    }
+    #[test]
+    fn test_guardar_en_archivo() {
+        let auto = helper_crear_auto1();
+        let mut concesionario = helper_crear_concesionario();
+        let path = path_test();
+        concesionario.agregar_auto_y_guardar(auto, path);
+        concesionario.guardar_en_archivo(path).unwrap();
+
+        // Leer el archivo y verificar que contiene el auto
+        let contenido = fs::read_to_string(path).unwrap();
+        assert!(contenido.contains("Toyota"));
+        // Limpieza
+        let _ = fs::remove_file(path);
+    }
+    #[test]
+    fn test_agregar_auto() {
+        let mut concesionario =
+            Concesionario::new("TuAutoExpress".to_string(), "calle".to_string(), 1, vec![]);
+        assert_eq!(concesionario.nombre, "TuAutoExpress");
+        assert_eq!(concesionario.direccion, "calle");
+        assert_eq!(concesionario.capacidad_maxima, 1);
+
+        let a1 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            1995,
+            10000.0,
+            Color::Blanco,
+        );
+        let a2 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            2001,
+            10000.0,
+            Color::Blanco,
+        );
+        assert_eq!(concesionario.agregar_auto(a1), true);
+        assert_eq!(concesionario.agregar_auto(a2), false);
+    }
+
+    #[test]
+    fn test_eliminar_auto() {
+        let a1 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            1995,
+            10000.0,
+            Color::Blanco,
+        );
+        let a2 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            2001,
+            10000.0,
+            Color::Blanco,
+        );
+
+        let v1: Vec<Auto> = vec![a1.clone()];
+        let mut concesionario =
+            Concesionario::new("TuAutoExpress".to_string(), "calle".to_string(), 1, v1);
+
+        assert!(concesionario.eliminar_auto(&a1).is_some());
+        assert!(concesionario.eliminar_auto(&a2).is_none());
+        assert!(concesionario.autos.is_empty());
+    }
+    #[test]
+    fn test_eliminar_auto_concesionario_vacio() {
+        let a1 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            1995,
+            10000.0,
+            Color::Blanco,
+        );
+        let mut concesionario =
+            Concesionario::new("TuAutoExpress".to_string(), "calle".to_string(), 1, vec![]);
+        assert!(concesionario.eliminar_auto(&a1).is_none());
+    }
+
+    #[test]
+    fn test_buscar_auto() {
+        let a1 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            1995,
+            10000.0,
+            Color::Blanco,
+        );
+        let a2 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            2001,
+            10000.0,
+            Color::Blanco,
+        );
+
+        let v1: Vec<Auto> = vec![a1.clone()];
+        let concesionario =
+            Concesionario::new("TuAutoExpress".to_string(), "calle".to_string(), 1, v1);
+
+        assert!(concesionario.buscar_auto(&a1).is_some());
+        assert!(concesionario.buscar_auto(&a2).is_none());
+    }
+
+    #[test]
+    fn crear_auto() {
+        let auto = Auto::new(
+            "bmw".to_string(),
+            "x5".to_string(),
+            2010,
+            10000.0,
+            Color::Negro,
+        );
+        assert_eq!(auto.marca, "bmw");
+        assert_eq!(auto.anio, 2010);
+        assert_eq!(auto.color, Color::Negro);
+        assert_eq!(auto.precio_bruto, 10000.0);
+        assert_eq!(auto.modelo, "x5");
+    }
+    #[test]
+    fn test_calcular_precio_recargo_color() {
+        let a1 = Auto::new(
+            "Renault".to_string(),
+            "x5".to_string(),
+            2010,
+            10000.0,
+            Color::Amarillo,
+        );
+        assert_eq!(a1.calcular_precio(), 12500.0);
+    }
+    #[test]
+    fn test_calcular_precio_descuento_color() {
+        let a1 = Auto::new(
+            "Renault".to_string(),
+            "x5".to_string(),
+            2010,
+            10000.0,
+            Color::Negro,
+        );
+        assert_eq!(a1.calcular_precio(), 9000.0);
+    }
+
+    #[test]
+    fn test_calcular_precio_recargo_marca_y_color() {
+        let a1 = Auto::new(
+            "BMW".to_string(),
+            "x5".to_string(),
+            2010,
+            10000.0,
+            Color::Azul,
+        );
+        assert_eq!(a1.calcular_precio(), 14375.0);
+        assert_eq!(a1.precio_bruto, 10000.0);
+    }
+
+    #[test]
+    fn test_calcular_precio_descuento_color_anio() {
+        let a1 = Auto::new(
+            "Toyota".to_string(),
+            "x5".to_string(),
+            1995,
+            10000.0,
+            Color::Blanco,
+        );
+        assert_eq!(a1.calcular_precio(), 8550.0);
+        assert_eq!(a1.precio_bruto, 10000.0);
+    }
+
+    #[test]
+    fn test_agregar_con_error_positivo() {
+        let mut concesionario = helper_crear_concesionario();
+        let auto = helper_crear_auto1();
+        let auto2 = helper_crear_auto2();
+        assert_eq!(concesionario.agregar_auto_con_error(auto), Ok(()));
+        assert_eq!(concesionario.agregar_auto_con_error(auto2), Ok(()));
+        assert_eq!(concesionario.autos.len(), 2);
+    }
+    #[test]
+    fn test_agregar_con_error_negativo() {
+        let mut concesionario = helper_crear_concesionario();
+        let auto = helper_crear_auto1();
+        let auto2 = helper_crear_auto2();
+        let auto3 = helper_crear_auto3();
+        assert_eq!(concesionario.agregar_auto_con_error(auto), Ok(()));
+        assert_eq!(concesionario.agregar_auto_con_error(auto2), Ok(()));
+        assert_eq!(
+            concesionario.agregar_auto_con_error(auto3),
+            Err(ConcesionarioError::CapacidadMaxima)
+        );
+        assert_eq!(concesionario.autos.len(), 2);
+    }
+
+    #[test]
+    fn test_recargo_color_primario_positivo() {
+        let precio = 10000.0;
+        let resultado = Auto::recargo_color_primario(precio);
+        assert_eq!(resultado, 12500.0);
+    }
+
+    #[test]
+    fn test_recargo_color_primario_cero() {
+        let precio = 0.0;
+        let resultado = Auto::recargo_color_primario(precio);
+        assert_eq!(resultado, 0.0);
+    }
+
+    #[test]
+    fn test_recargo_marca_bmw_positivo() {
+        let precio = 10000.0;
+        let resultado = Auto::recargo_marca_bmw(precio);
+        assert_eq!(resultado, 11500.0);
+    }
+
+    #[test]
+    fn test_recargo_marca_bmw_cero() {
+        let precio = 0.0;
+        let resultado = Auto::recargo_marca_bmw(precio);
+        assert_eq!(resultado, 0.0);
+    }
+
+    #[test]
+    fn test_descuento_color_positivo() {
+        let precio = 10000.0;
+        let resultado = Auto::descuento_color(precio);
+        assert_eq!(resultado, 9000.0);
+    }
+
+    #[test]
+    fn test_descuento_color_cero() {
+        let precio = 0.0;
+        let resultado = Auto::descuento_color(precio);
+        assert_eq!(resultado, 0.0);
+    }
+
+    #[test]
+    fn test_descuento_anio_positivo() {
+        let precio = 10000.0;
+        let resultado = Auto::descuento_anio(precio);
+        assert_eq!(resultado, 9500.0);
+    }
+
+    #[test]
+    fn test_descuento_anio_cero() {
+        let precio = 0.0;
+        let resultado = Auto::descuento_anio(precio);
+        assert_eq!(resultado, 0.0);
+    }
+}
