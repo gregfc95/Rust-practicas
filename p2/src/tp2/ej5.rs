@@ -6,10 +6,6 @@ retorna un arreglo nuevo con los valores duplicados del parámetro.
 pub fn ej5() {
     let arr = vec![1.0, 2.0, 3.0];
     let arr_duplicado = duplicar_valores(arr.clone());
-
-    println!("Arreglo original: {:?}", arr);
-
-    println!("Arreglo duplicado: {:?}", arr_duplicado);
 }
 
 fn duplicar_valores(arr: Vec<f64>) -> Vec<f64> {
@@ -29,3 +25,15 @@ fn duplicar_valores_v2(arr: Vec<f64>) -> Vec<f64> {
     .collect() // Convertimos el iterador en un nuevo Vec<f64>
 }
 */
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_duplicar_valores() {
+        let arr = vec![1.0, 2.0, 3.0];
+        let arr_duplicado = duplicar_valores(arr.clone());
+        assert_eq!(arr_duplicado, vec![2.0, 4.0, 6.0]);
+    }
+}
